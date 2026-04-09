@@ -8,64 +8,296 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --card:      #1c2128;
+    --border:    #30363d;
+    --border-sub:#21262d;
+    --text:      #e6edf3;
+    --text-muted:#848d97;
+    --text-dim:  #484f58;
+    --accent:    #58a6ff;
+    --accent-dim:#1f3a5f;
+    --green:     #3fb950;
+    --green-dim: #12261e;
+    --red:       #f85149;
+    --red-dim:   #2a1515;
+    --amber:     #d29922;
+    --amber-dim: #2a1f0a;
+    --purple:    #bc8cff;
+    --purple-dim:#2d2040;
+  }
+
+  * { font-family: 'Geist', sans-serif; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); }
+
+  /* Scrollbars */
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
   /* Diff table */
-  .code-table { font-family: 'Courier New', monospace; font-size: 12px; width: 100%; border-collapse: collapse; }
-  .code-table td { padding: 1px 6px; white-space: pre; vertical-align: top; }
-  .ln { color: #aaa; text-align: right; min-width: 38px; user-select: none; border-right: 1px solid #e5e7eb; padding-right: 8px; }
-  .diff-add { background: #e6ffec; }
-  .diff-del { background: #ffebe9; }
-  .diff-ctx { background: #fff; }
-  .hunk-row td { background: #dbeafe; color: #1d4ed8; font-style: italic; padding: 2px 8px; }
-  .sign-add { color: #16a34a; min-width: 14px; text-align: center; }
-  .sign-del { color: #dc2626; min-width: 14px; text-align: center; }
-  .sign-ctx { color: #d1d5db; min-width: 14px; text-align: center; }
-  /* AI result */
-  .ai-box { background: #f0f9ff; border-left: 3px solid #38bdf8; padding: 10px 12px; border-radius: 4px; }
-  /* Misc */
-  .scrollbar-thin { scrollbar-width: thin; }
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-  .thread-card { transition: box-shadow 0.15s; }
-  .thread-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-  /* Form input base */
-  .input {
-    width: 100%; border: 1px solid #d1d5db; border-radius: 6px;
-    padding: 8px 12px; font-size: 14px; outline: none; transition: box-shadow 0.15s;
+  .code-table { font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 100%; border-collapse: collapse; }
+  .code-table td { padding: 1px 8px; white-space: pre; vertical-align: top; }
+  .ln { color: var(--text-dim); text-align: right; min-width: 42px; user-select: none;
+        border-right: 1px solid var(--border-sub); padding-right: 10px; }
+  .diff-add { background: rgba(63,185,80,0.1); }
+  .diff-del { background: rgba(248,81,73,0.1); }
+  .diff-ctx { background: transparent; }
+  .diff-row-selectable { cursor: pointer; position: relative; }
+  .diff-row-selectable:hover td { background: rgba(88,166,255,0.08) !important; }
+  .diff-row-selected td { background: rgba(88,166,255,0.16) !important;
+    outline: 1px solid rgba(88,166,255,0.4); outline-offset: -1px; }
+  .hunk-row td { background: var(--accent-dim); color: var(--accent);
+    font-style: normal; padding: 3px 10px; font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.02em; }
+  .sign-add { color: var(--green); min-width: 16px; text-align: center; font-family: 'JetBrains Mono', monospace; }
+  .sign-del { color: var(--red);   min-width: 16px; text-align: center; font-family: 'JetBrains Mono', monospace; }
+  .sign-ctx { color: var(--text-dim); min-width: 16px; text-align: center; }
+
+  /* Input */
+  .inp {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 12px; font-size: 13px; color: var(--text);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+    font-family: 'Geist', sans-serif;
   }
-  .input:focus { box-shadow: 0 0 0 2px #3b82f6; border-color: #3b82f6; }
+  .inp::placeholder { color: var(--text-dim); }
+  .inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
+
+  /* Skeleton shimmer */
+  @keyframes shimmer {
+    0%   { background-position: -400px 0; }
+    100% { background-position:  400px 0; }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, var(--card) 25%, var(--surface) 50%, var(--card) 75%);
+    background-size: 400px 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+    border-radius: 4px;
+  }
+
+  /* AI markdown output */
+  .md-body { font-size: 13px; line-height: 1.7; color: var(--text); }
+  .md-body h1,.md-body h2,.md-body h3 { font-weight: 600; margin: 12px 0 6px; color: var(--text); }
+  .md-body h1 { font-size: 15px; }
+  .md-body h2 { font-size: 14px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  .md-body h3 { font-size: 13px; color: var(--accent); }
+  .md-body p  { margin: 6px 0; }
+  .md-body ul,.md-body ol { margin: 6px 0 6px 18px; }
+  .md-body li { margin: 3px 0; }
+  .md-body strong { font-weight: 600; color: var(--text); }
+  .md-body em { font-style: italic; color: #cdd9e5; }
+  .md-body code {
+    font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 4px; color: #e3b341;
+  }
+  .md-body pre {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; overflow-x: auto; margin: 10px 0;
+  }
+  .md-body pre code {
+    background: none; border: none; padding: 0; color: var(--text); font-size: 12px;
+  }
+  .md-body blockquote {
+    border-left: 3px solid var(--accent); padding-left: 12px;
+    margin: 8px 0; color: var(--text-muted);
+  }
+  .md-body a { color: var(--accent); text-decoration: underline; }
+  .md-body hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
+  /* Toast */
+  @keyframes slideIn  { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+  @keyframes slideOut { from { transform: translateX(0); opacity:1; } to { transform: translateX(110%); opacity:0; } }
+  .toast-enter { animation: slideIn  0.25s ease-out forwards; }
+  .toast-exit  { animation: slideOut 0.25s ease-in  forwards; }
+
+  /* Cards & panels */
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .panel-header { background: var(--surface); border-bottom: 1px solid var(--border); border-radius: 10px 10px 0 0; }
+
+  /* Thread card hover */
+  .thread-card { transition: border-color 0.15s, box-shadow 0.15s; }
+  .thread-card:hover { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(88,166,255,0.15); }
+
+  /* Fade in */
+  @keyframes fadeUp { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: translateY(0); } }
+  .fade-up { animation: fadeUp 0.2s ease-out forwards; }
+
   /* Section label */
-  .section-label {
-    font-size: 11px; font-weight: 600; color: #9ca3af;
-    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;
+  .slabel { font-size: 10px; font-weight: 700; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.1em; }
+
+  /* Status chip */
+  .chip { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid; display: inline-flex; align-items: center; }
+  .chip-active   { background: rgba(88,166,255,0.12);  color: var(--accent);  border-color: rgba(88,166,255,0.3);  }
+  .chip-pending  { background: rgba(210,153,34,0.12);  color: var(--amber);   border-color: rgba(210,153,34,0.3);  }
+  .chip-fixed    { background: rgba(63,185,80,0.12);   color: var(--green);   border-color: rgba(63,185,80,0.3);   }
+  .chip-resolved { background: rgba(132,141,151,0.12); color: var(--text-muted); border-color: rgba(132,141,151,0.3); }
+  .chip-closed   { background: rgba(72,79,88,0.2);     color: var(--text-dim); border-color: var(--border); }
+  .chip-bydesign { background: rgba(188,140,255,0.12); color: var(--purple);  border-color: rgba(188,140,255,0.3); }
+  .chip-wontfix  { background: rgba(248,81,73,0.12);   color: var(--red);     border-color: rgba(248,81,73,0.3);   }
+
+  /* Severity rows */
+  .sev-critical { background: rgba(248,81,73,0.08);  border-left: 3px solid var(--red);    border-radius: 0 6px 6px 0; }
+  .sev-high     { background: rgba(210,153,34,0.08); border-left: 3px solid var(--amber);  border-radius: 0 6px 6px 0; }
+  .sev-medium   { background: rgba(88,166,255,0.07); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
+  .sev-info     { background: rgba(63,185,80,0.07);  border-left: 3px solid var(--green);  border-radius: 0 6px 6px 0; }
+
+  /* Vote buttons */
+  .vote-btn { font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid; width: 100%; text-align: left; transition: all 0.15s; cursor: pointer; }
+  .vote-approve { background: rgba(63,185,80,0.1);   color: var(--green);  border-color: rgba(63,185,80,0.25);  }
+  .vote-approve:hover:not(:disabled) { background: rgba(63,185,80,0.2); }
+  .vote-suggest { background: rgba(88,166,255,0.1);  color: var(--accent); border-color: rgba(88,166,255,0.25); }
+  .vote-suggest:hover:not(:disabled) { background: rgba(88,166,255,0.2); }
+  .vote-reject  { background: rgba(248,81,73,0.1);   color: var(--red);    border-color: rgba(248,81,73,0.25);  }
+  .vote-reject:hover:not(:disabled)  { background: rgba(248,81,73,0.2);  }
+  .vote-clear   { background: transparent; color: var(--text-muted); border-color: var(--border); }
+  .vote-clear:hover:not(:disabled)   { background: var(--surface); }
+
+  /* Resizable sidebar */
+  #sidebar { width: 260px; min-width: 180px; max-width: 420px; }
+  .resize-handle {
+    width: 4px; cursor: col-resize; background: transparent;
+    transition: background 0.15s; flex-shrink: 0;
   }
+  .resize-handle:hover, .resize-handle.dragging { background: var(--accent); }
+
+  /* Btn base */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-family: 'Geist', sans-serif; font-weight: 500; border-radius: 6px;
+    transition: all 0.15s; cursor: pointer; border: 1px solid transparent;
+    white-space: nowrap; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-xs  { font-size: 11px; padding: 4px 10px; }
+  .btn-sm  { font-size: 12px; padding: 5px 12px; }
+  .btn-md  { font-size: 13px; padding: 8px 16px; }
+  .btn-primary  { background: var(--accent); color: #0d1117; border-color: var(--accent); }
+  .btn-primary:hover:not(:disabled)  { background: #79b8ff; }
+  .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover:not(:disabled){ background: var(--card); border-color: #484f58; }
+  .btn-ghost    { background: transparent; color: var(--text-muted); border-color: transparent; }
+  .btn-ghost:hover:not(:disabled)    { background: var(--surface); color: var(--text); }
+  .btn-danger   { background: rgba(248,81,73,0.15); color: var(--red); border-color: rgba(248,81,73,0.3); }
+  .btn-danger:hover:not(:disabled)   { background: rgba(248,81,73,0.25); }
+  .btn-violet   { background: rgba(188,140,255,0.15); color: var(--purple); border-color: rgba(188,140,255,0.3); }
+  .btn-violet:hover:not(:disabled)   { background: rgba(188,140,255,0.25); }
+  .btn-green    { background: rgba(63,185,80,0.15); color: var(--green); border-color: rgba(63,185,80,0.3); }
+  .btn-green:hover:not(:disabled)    { background: rgba(63,185,80,0.25); }
+  .btn-amber    { background: rgba(210,153,34,0.15); color: var(--amber); border-color: rgba(210,153,34,0.3); }
+  .btn-amber:hover:not(:disabled)    { background: rgba(210,153,34,0.25); }
+
+  /* Tabs */
+  .tab { font-size: 12px; font-weight: 500; padding: 8px 14px; border-bottom: 2px solid transparent;
+    color: var(--text-muted); transition: all 0.15s; cursor: pointer; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Kbd hint */
+  kbd { font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px 4px; color: var(--text-muted); }
+
+  /* Modal backdrop */
+  .modal-bg { background: rgba(1,4,9,0.7); backdrop-filter: blur(4px); }
+
+  /* Auth screen grid pattern */
+  .auth-bg {
+    background-color: var(--bg);
+    background-image: radial-gradient(var(--border-sub) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Pulse dot for loading */
+  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .pulse-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
+  .pulse-dot:nth-child(2) { animation-delay: 0.2s; }
+  .pulse-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  /* PR score ring */
+  .score-ring { transform-origin: center; transform: rotate(-90deg); }
+
+  /* Drag & drop zone */
+  .drop-zone { border: 2px dashed var(--border); border-radius: 8px; transition: all 0.2s; }
+  .drop-zone.over { border-color: var(--accent); background: rgba(88,166,255,0.06); }
+
+  /* Conventions tag */
+  .convention-tag { font-size: 10px; font-family: 'JetBrains Mono', monospace; padding: 2px 7px; border-radius: 4px; background: rgba(188,140,255,0.1); color: var(--purple); border: 1px solid rgba(188,140,255,0.2); white-space: nowrap; }
+
+  /* Effort badge */
+  .effort-low    { background: rgba(63,185,80,0.1);  color: var(--green);  border: 1px solid rgba(63,185,80,0.25);  }
+  .effort-medium { background: rgba(210,153,34,0.1); color: var(--amber);  border: 1px solid rgba(210,153,34,0.25); }
+  .effort-high   { background: rgba(248,81,73,0.1);  color: var(--red);    border: 1px solid rgba(248,81,73,0.25);  }
 </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useCallback, createContext, useContext } = React;
+
+// ── Toast context ──────────────────────────────────────────────────────
+
+const ToastCtx = createContext(null);
+
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+  const add = useCallback((msg, type = 'info', duration = 3500) => {
+    const id = Date.now() + Math.random();
+    setToasts(p => [...p, { id, msg, type, exiting: false }]);
+    setTimeout(() => {
+      setToasts(p => p.map(t => t.id === id ? { ...t, exiting: true } : t));
+      setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 280);
+    }, duration);
+  }, []);
+  return (
+    <ToastCtx.Provider value={add}>
+      {children}
+      <div className="fixed bottom-5 right-5 z-[200] flex flex-col gap-2 pointer-events-none" style={{maxWidth:'360px'}}>
+        {toasts.map(t => (
+          <ToastItem key={t.id} toast={t} onDismiss={() => setToasts(p => p.filter(x => x.id !== t.id))} />
+        ))}
+      </div>
+    </ToastCtx.Provider>
+  );
+}
+
+function ToastItem({ toast, onDismiss }) {
+  const colors = {
+    success: { bg: 'rgba(63,185,80,0.15)',  border: 'rgba(63,185,80,0.35)',  text: '#3fb950', icon: 'ok' },
+    error:   { bg: 'rgba(248,81,73,0.15)',  border: 'rgba(248,81,73,0.35)',  text: '#f85149', icon: 'x' },
+    info:    { bg: 'rgba(88,166,255,0.12)', border: 'rgba(88,166,255,0.3)',  text: '#58a6ff', icon: 'i' },
+    warn:    { bg: 'rgba(210,153,34,0.15)', border: 'rgba(210,153,34,0.35)', text: '#d29922', icon: '!' },
+  };
+  const c = colors[toast.type] || colors.info;
+  return (
+    <div className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-lg border backdrop-blur-sm ${toast.exiting ? 'toast-exit' : 'toast-enter'}`}
+      style={{ background: c.bg, borderColor: c.border }}>
+      <span style={{ color: c.text, fontWeight: 700, fontSize: 12, marginTop: 1, fontFamily: 'JetBrains Mono' }}>{c.icon}</span>
+      <span style={{ fontSize: 13, color: 'var(--text)', flex: 1, lineHeight: 1.5 }}>{toast.msg}</span>
+      <button onClick={onDismiss} style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 1 }}>x</button>
+    </div>
+  );
+}
+
+function useToast() { return useContext(ToastCtx); }
 
 // ── ADO REST helpers ───────────────────────────────────────────────────
 
 function b64(pat) { return 'Basic ' + btoa(':' + pat); }
 
 function parsePrUrl(raw) {
-  const m = raw.trim().match(
-    /https?:\/\/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+)\/pullrequest\/(\d+)/i
-  );
-  if (!m) throw new Error(
-    'Invalid URL. Expected: https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}'
-  );
-  // decodeURIComponent so spaces/special chars in project names aren't double-encoded
-  // when we later call encodeURIComponent() in apiBase()
-  return {
-    org:     decodeURIComponent(m[1]),
-    project: decodeURIComponent(m[2]),
-    repo:    decodeURIComponent(m[3]),
-    prId:    parseInt(m[4]),
-  };
+  const m = raw.trim().match(/https?:\/\/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+)\/pullrequest\/(\d+)/i);
+  if (!m) throw new Error('Invalid URL. Expected: https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}');
+  return { org: decodeURIComponent(m[1]), project: decodeURIComponent(m[2]), repo: decodeURIComponent(m[3]), prId: parseInt(m[4]) };
 }
 
 function apiBase({ org, project }) {
@@ -77,170 +309,296 @@ async function adoGet(url, pat) {
   if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`ADO ${r.status}: ${t.slice(0,200)}`); }
   return r.json();
 }
-
 async function adoPost(url, pat, body) {
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: b64(pat), 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`ADO ${r.status}: ${t.slice(0,200)}`); }
+  const r = await fetch(url, { method:'POST', headers:{ Authorization:b64(pat), 'Content-Type':'application/json', Accept:'application/json' }, body:JSON.stringify(body) });
+  if (!r.ok) { const t = await r.text().catch(()=>''); throw new Error(`ADO ${r.status}: ${t.slice(0,200)}`); }
+  return r.json();
+}
+async function adoPatch(url, pat, body) {
+  const r = await fetch(url, { method:'PATCH', headers:{ Authorization:b64(pat), 'Content-Type':'application/json', Accept:'application/json' }, body:JSON.stringify(body) });
+  if (!r.ok) { const t = await r.text().catch(()=>''); throw new Error(`ADO ${r.status}: ${t.slice(0,200)}`); }
+  return r.json();
+}
+async function adoPut(url, pat, body) {
+  const r = await fetch(url, { method:'PUT', headers:{ Authorization:b64(pat), 'Content-Type':'application/json', Accept:'application/json' }, body:JSON.stringify(body) });
+  if (!r.ok) { const t = await r.text().catch(()=>''); throw new Error(`ADO ${r.status}: ${t.slice(0,200)}`); }
   return r.json();
 }
 
-// ── Anthropic helper ───────────────────────────────────────────────────
+// ── Claude helper ──────────────────────────────────────────────────────
 
-// Returns { text, inputTokens, outputTokens } so callers can track actual spend
-async function claude(apiKey, prompt, modelId = 'claude-sonnet-4-6') {
+async function claude(apiKey, prompt, modelId = 'claude-sonnet-4-6', maxTokens = 1500) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: modelId,
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: modelId, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] }),
   });
-  if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`Anthropic ${r.status}: ${t.slice(0,300)}`); }
+  if (!r.ok) { const t = await r.text().catch(()=>''); throw new Error(`Claude ${r.status}: ${t.slice(0,300)}`); }
   const d = await r.json();
-  return {
-    text:         d.content[0].text,
-    inputTokens:  d.usage?.input_tokens  || 0,
-    outputTokens: d.usage?.output_tokens || 0,
-  };
+  return { text: d.content[0].text, inputTokens: d.usage?.input_tokens||0, outputTokens: d.usage?.output_tokens||0 };
 }
 
 // ── Models & pricing ──────────────────────────────────────────────────
+
 const MODELS = [
-  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5',   inPrice: 0.80,  outPrice: 4.00  },
-  { id: 'claude-sonnet-4-5-20251019',label: 'Sonnet 4.5',  inPrice: 3.00,  outPrice: 15.00 },
-  { id: 'claude-sonnet-4-6',         label: 'Sonnet 4.6',  inPrice: 3.00,  outPrice: 15.00 },
-  { id: 'claude-opus-4-6',           label: 'Opus 4.6',    inPrice: 15.00, outPrice: 75.00 },
+  { id: 'claude-haiku-4-5-20251001',  label: 'Haiku 4.5',   inPrice: 0.80,  outPrice: 4.00  },
+  { id: 'claude-sonnet-4-5-20251019', label: 'Sonnet 4.5',  inPrice: 3.00,  outPrice: 15.00 },
+  { id: 'claude-sonnet-4-6',          label: 'Sonnet 4.6',  inPrice: 3.00,  outPrice: 15.00 },
+  { id: 'claude-opus-4-6',            label: 'Opus 4.6',    inPrice: 15.00, outPrice: 75.00 },
 ];
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
-
-function modelPricing(modelId) {
-  return MODELS.find(m => m.id === modelId) || MODELS[2];
-}
-
-function calcCost(inTok, outTok, modelId) {
-  const p = modelPricing(modelId);
-  return (inTok / 1e6) * p.inPrice + (outTok / 1e6) * p.outPrice;
-}
-
-function fmtCost(usd) {
-  if (usd === 0)     return '$0.0000';
-  if (usd < 0.0001)  return '<$0.0001';
-  return '$' + usd.toFixed(4);
-}
-
-// Estimate total cost if user runs every AI action on every active thread
-function estimateCost(threads, context, modelId) {
-  const active = threads.filter(
-    t => !t.isDeleted && t.comments?.length && ['active','pending'].includes(t.status)
-  );
-  let inTok = 0, outTok = 0;
-  const ctxLen = (context || '').length;
-
-  for (const t of active) {
-    const threadChars = t.comments.reduce((s, c) => s + (c.content || '').length, 0);
-    const promptTokens = Math.ceil((250 + ctxLen + threadChars) / 4);
-    inTok  += promptTokens * 3;   // 3 actions per thread
-    outTok += 400 * 3;
-  }
-  const allChars = active.reduce(
-    (s, t) => s + t.comments.reduce((cs, c) => cs + (c.content || '').length, 0), 0
-  );
-  inTok  += Math.ceil((300 + ctxLen + allChars) / 4);
-  outTok += 600;
-
-  return calcCost(inTok, outTok, modelId);
-}
+function modelPricing(id) { return MODELS.find(m => m.id === id) || MODELS[2]; }
+function calcCost(inTok, outTok, id) { const p = modelPricing(id); return (inTok/1e6)*p.inPrice + (outTok/1e6)*p.outPrice; }
+function fmtCost(usd) { if (usd===0) return '$0.0000'; if (usd<0.0001) return '<$0.0001'; return '$'+usd.toFixed(4); }
 
 // ── Utilities ──────────────────────────────────────────────────────────
 
 function relTime(iso) {
   if (!iso) return '';
-  const m = Math.floor((Date.now() - new Date(iso)) / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  const m = Math.floor((Date.now()-new Date(iso))/60000);
+  if (m<1) return 'just now';
+  if (m<60) return `${m}m ago`;
+  const h = Math.floor(m/60);
+  if (h<24) return `${h}h ago`;
+  return `${Math.floor(h/24)}d ago`;
 }
-
-function initials(name) {
-  return (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
-}
-
-const AV_COLORS = ['bg-blue-500','bg-emerald-500','bg-violet-500','bg-amber-500','bg-rose-500','bg-cyan-500'];
-function avColor(name) { return AV_COLORS[(name || '').charCodeAt(0) % AV_COLORS.length]; }
-
-const STATUS_CLS = {
-  active:   'bg-blue-100 text-blue-700',
-  pending:  'bg-yellow-100 text-yellow-700',
-  fixed:    'bg-green-100 text-green-700',
-  resolved: 'bg-gray-100 text-gray-500',
-  closed:   'bg-gray-100 text-gray-400',
-  byDesign: 'bg-purple-100 text-purple-700',
-  wontFix:  'bg-red-100 text-red-600',
-};
-
-// ADO change type bitmask → [label, css]
+function initials(name) { return (name||'?').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
 function changeLabel(ct) {
-  if (!ct) return ['EDIT', 'bg-yellow-100 text-yellow-700'];
-  if (ct & 4) return ['DEL',  'bg-red-100 text-red-700'];
-  if (ct & 1) return ['ADD',  'bg-green-100 text-green-700'];
-  if (ct & 8) return ['REN',  'bg-purple-100 text-purple-700'];
-  return ['EDIT', 'bg-yellow-100 text-yellow-700'];
+  if (!ct) return ['EDIT','amber'];
+  if (ct & 4) return ['DEL','red'];
+  if (ct & 1) return ['ADD','green'];
+  if (ct & 8) return ['REN','purple'];
+  return ['EDIT','amber'];
+}
+const STATUS_CHIP = { active:'chip-active', pending:'chip-pending', fixed:'chip-fixed', resolved:'chip-resolved', closed:'chip-closed', byDesign:'chip-bydesign', wontFix:'chip-wontfix' };
+
+// ── Markdown renderer ──────────────────────────────────────────────────
+// Lightweight parser: handles headers, bold, italic, code blocks, inline code, lists, blockquotes, hr, links
+
+function parseMarkdown(text) {
+  if (!text) return '';
+  const escape = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+
+  function inlineFormat(s) {
+    // code spans first
+    s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${escape(c)}</code>`);
+    // bold+italic
+    s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    // bold
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    // italic
+    s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    s = s.replace(/_(.+?)_/g, '<em>$1</em>');
+    // links
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    return s;
+  }
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim();
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(escape(lines[i])); i++; }
+      out.push(`<pre><code${lang ? ` class="language-${lang}"` : ''}>${codeLines.join('\n')}</code></pre>`);
+      i++;
+      continue;
+    }
+
+    // HR
+    if (/^[-*_]{3,}$/.test(line.trim())) { out.push('<hr>'); i++; continue; }
+
+    // Headings
+    const hm = line.match(/^(#{1,3})\s+(.*)/);
+    if (hm) { const lvl=hm[1].length; out.push(`<h${lvl}>${inlineFormat(hm[2])}</h${lvl}>`); i++; continue; }
+
+    // Blockquote
+    if (line.startsWith('> ')) {
+      const bqLines = [];
+      while (i < lines.length && lines[i].startsWith('> ')) { bqLines.push(lines[i].slice(2)); i++; }
+      out.push(`<blockquote>${inlineFormat(bqLines.join('<br>'))}</blockquote>`);
+      continue;
+    }
+
+    // Unordered list
+    if (/^[-*+]\s/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[-*+]\s/.test(lines[i])) {
+        items.push(`<li>${inlineFormat(lines[i].replace(/^[-*+]\s/,''))}</li>`); i++;
+      }
+      out.push(`<ul>${items.join('')}</ul>`);
+      continue;
+    }
+
+    // Ordered list
+    if (/^\d+\.\s/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+        items.push(`<li>${inlineFormat(lines[i].replace(/^\d+\.\s/,''))}</li>`); i++;
+      }
+      out.push(`<ol>${items.join('')}</ol>`);
+      continue;
+    }
+
+    // Empty line
+    if (line.trim() === '') { i++; continue; }
+
+    // Paragraph
+    const pLines = [];
+    while (i < lines.length && lines[i].trim() !== '' && !lines[i].startsWith('#') && !lines[i].startsWith('```') && !/^[-*+]\s/.test(lines[i]) && !/^\d+\.\s/.test(lines[i]) && !lines[i].startsWith('>') && !/^[-*_]{3,}$/.test(lines[i].trim())) {
+      pLines.push(inlineFormat(lines[i])); i++;
+    }
+    if (pLines.length) out.push(`<p>${pLines.join('<br>')}</p>`);
+  }
+  return out.join('\n');
 }
 
-// ── Shared micro-components ────────────────────────────────────────────
+function MarkdownOutput({ text, className = '' }) {
+  const html = parseMarkdown(text);
+  return <div className={`md-body ${className}`} dangerouslySetInnerHTML={{ __html: html }} />;
+}
 
-function Avatar({ name }) {
+// ── Skeleton components ────────────────────────────────────────────────
+
+function SkeletonLine({ w = '100%', h = 12 }) {
+  return <div className="skeleton" style={{ width: w, height: h, marginBottom: 6 }} />;
+}
+function SkeletonBlock() {
   return (
-    <div className={`w-7 h-7 ${avColor(name)} rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0`}>
+    <div style={{ padding: '14px' }}>
+      <SkeletonLine w="60%" h={10} />
+      <SkeletonLine w="100%" h={10} />
+      <SkeletonLine w="85%" h={10} />
+      <SkeletonLine w="40%" h={10} />
+    </div>
+  );
+}
+
+// ── Spinner ────────────────────────────────────────────────────────────
+
+function Spin({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ animation: 'spin 0.7s linear infinite' }}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LoadingDots() {
+  return (
+    <span style={{ display:'inline-flex', gap:3, alignItems:'center' }}>
+      {[0,1,2].map(i => (
+        <span key={i} className="pulse-dot" style={{ width:5, height:5, borderRadius:'50%', background:'var(--accent)', display:'block', animationDelay:`${i*0.15}s` }} />
+      ))}
+    </span>
+  );
+}
+
+// ── Btn ────────────────────────────────────────────────────────────────
+
+function Btn({ children, onClick, disabled, variant='primary', size='sm', className='', title='' }) {
+  return (
+    <button onClick={onClick} disabled={disabled} title={title}
+      className={`btn btn-${size} btn-${variant} ${className}`}>
+      {children}
+    </button>
+  );
+}
+
+// ── Avatar ─────────────────────────────────────────────────────────────
+
+const AV_COLORS = ['#1f6feb','#1a7f37','#6e40c9','#b45309','#b91c1c','#0e7490'];
+function avColor(name) { return AV_COLORS[(name||'').charCodeAt(0) % AV_COLORS.length]; }
+
+function Avatar({ name, size = 28 }) {
+  return (
+    <div style={{ width:size, height:size, borderRadius:'50%', background:avColor(name), flexShrink:0,
+      display:'flex', alignItems:'center', justifyContent:'center', fontSize:size*0.38,
+      fontWeight:600, color:'#fff', letterSpacing:-0.5 }}>
       {initials(name)}
     </div>
   );
 }
 
-function Badge({ status }) {
-  const cls = STATUS_CLS[status] || 'bg-gray-100 text-gray-500';
-  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{status || '—'}</span>;
-}
-
-function Alert({ msg, type = 'error', onClose }) {
-  if (!msg) return null;
-  const cls = type === 'success'
-    ? 'bg-green-50 border-green-300 text-green-800'
-    : 'bg-red-50 border-red-300 text-red-700';
-  return (
-    <div className={`border rounded px-3 py-2 mb-3 flex items-start gap-2 text-sm ${cls}`}>
-      <span className="flex-1">{msg}</span>
-      {onClose && <button onClick={onClose} className="opacity-50 hover:opacity-100">✕</button>}
-    </div>
-  );
-}
-
-function Spin() { return <span className="inline-block animate-spin">⟳</span>; }
+// ── Field ──────────────────────────────────────────────────────────────
 
 function Field({ label, hint, children }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label style={{ display:'block', fontSize:12, fontWeight:500, color:'var(--text-muted)', marginBottom:6 }}>{label}</label>
       {children}
-      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+      {hint && <p style={{ fontSize:11, color:'var(--text-dim)', marginTop:5 }}>{hint}</p>}
     </div>
   );
 }
 
-// ── Step 1 — Credentials ───────────────────────────────────────────────
+// ── Diff engine ────────────────────────────────────────────────────────
+
+function computeClientDiff(oldText, newText, ctxLines = 3) {
+  const oldL = oldText ? oldText.split('\n') : [];
+  const newL = newText ? newText.split('\n') : [];
+  const m = oldL.length, n = newL.length;
+  if (m === 0) return newL.map((t, i) => ({ type:'add', mln:i+1, t }));
+  if (n === 0) return oldL.map((t, i) => ({ type:'del', oln:i+1, t }));
+  if (oldText === newText) return [{ hunk:'Files are identical — no differences.' }];
+  const CAP = 2000;
+  if (m > CAP || n > CAP) return [
+    { hunk:`File too large for inline diff (${m}x${n} lines).` },
+    ...oldL.map((t,i)=>({type:'del',oln:i+1,t})),
+    ...newL.map((t,i)=>({type:'add',mln:i+1,t})),
+  ];
+  const dp = [];
+  for (let i = 0; i <= m; i++) dp[i] = new Uint32Array(n + 1);
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = oldL[i-1]===newL[j-1] ? dp[i-1][j-1]+1 : Math.max(dp[i-1][j], dp[i][j-1]);
+  const ops = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i>0 && j>0 && oldL[i-1]===newL[j-1]) { ops.push({type:'ctx',oln:i,mln:j,t:oldL[i-1]}); i--; j--; }
+    else if (j>0 && (i===0||dp[i][j-1]>=dp[i-1][j])) { ops.push({type:'add',mln:j,t:newL[j-1]}); j--; }
+    else { ops.push({type:'del',oln:i,t:oldL[i-1]}); i--; }
+  }
+  ops.reverse();
+  const vis = new Uint8Array(ops.length);
+  for (let k = 0; k < ops.length; k++)
+    if (ops[k].type !== 'ctx')
+      for (let c = Math.max(0,k-ctxLines); c <= Math.min(ops.length-1,k+ctxLines); c++) vis[c] = 1;
+  const rows = [];
+  let skipping = false;
+  for (let k = 0; k < ops.length; k++) {
+    if (!vis[k]) { skipping = true; continue; }
+    if (skipping || k === 0) { const op=ops[k]; rows.push({hunk:`@@ -${op.oln||'?'} +${op.mln||'?'} @@`}); skipping=false; }
+    rows.push(ops[k]);
+  }
+  return rows;
+}
+
+function adoBlocksToRows(blocks) {
+  const rows = [];
+  for (const { changeType=0, mLines=[], oLines=[], modifiedStart=1, originalStart=1, originalCount=0, modifiedCount=0 } of blocks) {
+    if (changeType === 0) {
+      rows.push({hunk:`@@ -${originalStart},${originalCount} +${modifiedStart},${modifiedCount} @@`});
+      mLines.forEach((t,i) => rows.push({type:'ctx',oln:originalStart+i,mln:modifiedStart+i,t}));
+    } else if (changeType === 1) { mLines.forEach((t,i) => rows.push({type:'add',mln:modifiedStart+i,t})); }
+    else if (changeType === 2) { oLines.forEach((t,i) => rows.push({type:'del',oln:originalStart+i,t})); }
+    else {
+      oLines.forEach((t,i) => rows.push({type:'del',oln:originalStart+i,t}));
+      mLines.forEach((t,i) => rows.push({type:'add',mln:modifiedStart+i,t}));
+    }
+  }
+  return rows;
+}
+
+// ── Auth screen ────────────────────────────────────────────────────────
 
 function CredentialsPanel({ onSave }) {
   const [orgUrl, setOrgUrl] = useState('https://dev.azure.com/');
@@ -251,62 +609,67 @@ function CredentialsPanel({ onSave }) {
 
   function save() {
     const url = orgUrl.trim().replace(/\/$/, '');
-    if (!url || !pat.trim() || !apiKey.trim()) {
-      return setErr('Org URL, PAT, and Anthropic API key are required.');
-    }
-    if (!url.startsWith('https://dev.azure.com/') && !url.includes('visualstudio.com')) {
+    if (!url || !pat.trim() || !apiKey.trim()) return setErr('Org URL, PAT, and Anthropic API key are required.');
+    if (!url.startsWith('https://dev.azure.com/') && !url.includes('visualstudio.com'))
       return setErr('Org URL must start with https://dev.azure.com/your-org');
-    }
     setErr('');
     onSave({ orgUrl: url, pat: pat.trim(), anthropicKey: apiKey.trim(), context: ctx.trim() });
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
-      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">⬡</div>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">PR Review Assistant</h1>
-            <p className="text-sm text-gray-400">Azure DevOps · AI-powered</p>
+    <div className="auth-bg" style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+      <div className="panel fade-up" style={{ width:'100%', maxWidth:440, overflow:'hidden' }}>
+        {/* Top bar */}
+        <div style={{ background:'linear-gradient(135deg, #161b22 0%, #1a2332 100%)', padding:'28px 28px 24px', borderBottom:'1px solid var(--border)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
+            <div style={{ width:36, height:36, borderRadius:10, background:'var(--accent)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d1117" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>
+              </svg>
+            </div>
+            <div>
+              <h1 style={{ fontSize:16, fontWeight:700, color:'var(--text)', margin:0 }}>PR Review Assistant</h1>
+              <p style={{ fontSize:11, color:'var(--text-muted)', margin:0 }}>Azure DevOps + Claude</p>
+            </div>
+          </div>
+          <div style={{ background:'rgba(210,153,34,0.1)', border:'1px solid rgba(210,153,34,0.25)', borderRadius:8, padding:'8px 12px', fontSize:11, color:'var(--amber)', display:'flex', gap:8 }}>
+            <span style={{ fontWeight:600, flexShrink:0 }}>SESSION ONLY</span>
+            <span>Credentials live in memory and are cleared when you close this tab.</span>
           </div>
         </div>
 
-        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-5 text-xs text-amber-800">
-          🔒 <strong>Session-only</strong> — credentials are stored in memory only. Cleared when you close this tab.
-        </div>
+        <div style={{ padding:28 }}>
+          {err && (
+            <div style={{ background:'rgba(248,81,73,0.1)', border:'1px solid rgba(248,81,73,0.3)', borderRadius:8, padding:'10px 14px', fontSize:12, color:'var(--red)', marginBottom:20, display:'flex', gap:8, alignItems:'flex-start' }}>
+              <span style={{ fontWeight:700, flexShrink:0 }}>Error</span>
+              <span>{err}</span>
+            </div>
+          )}
 
-        {err && <Alert msg={err} onClose={() => setErr('')} />}
-
-        <div className="space-y-4">
-          <Field label="Azure DevOps Org URL">
-            <input value={orgUrl} onChange={e => setOrgUrl(e.target.value)}
-              className="input" placeholder="https://dev.azure.com/your-org" />
-          </Field>
-          <Field label="Personal Access Token (PAT)"
-            hint="Required scopes: Code (Read) · Pull Request Threads (Read &amp; Write)">
-            <input type="password" value={pat} onChange={e => setPat(e.target.value)}
-              className="input" placeholder="••••••••••" />
-          </Field>
-          <Field label="Anthropic API Key">
-            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
-              className="input" placeholder="sk-ant-..." />
-          </Field>
-          <Field label="Project context" hint="Optional — gives Claude context about your codebase">
-            <textarea value={ctx} onChange={e => setCtx(e.target.value)} rows={2}
-              className="input resize-none" placeholder="Brief description of your project…" />
-          </Field>
-          <button onClick={save}
-            className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition text-sm">
-            Save &amp; Continue →
-          </button>
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            <Field label="Azure DevOps Org URL">
+              <input value={orgUrl} onChange={e=>setOrgUrl(e.target.value)} className="inp" placeholder="https://dev.azure.com/your-org" />
+            </Field>
+            <Field label="Personal Access Token (PAT)" hint="Required: Code (Read+Write), Pull Request Threads (Read+Write)">
+              <input type="password" value={pat} onChange={e=>setPat(e.target.value)} className="inp" placeholder="Your PAT" />
+            </Field>
+            <Field label="Anthropic API Key">
+              <input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} className="inp" placeholder="sk-ant-..." />
+            </Field>
+            <Field label="Project Context" hint="Optional — injected into every Claude prompt for better suggestions">
+              <textarea value={ctx} onChange={e=>setCtx(e.target.value)} rows={2} className="inp" style={{ resize:'none' }} placeholder="e.g. Python FastAPI service, Snowflake ETL pipelines, OBE ESTI-360 estimation system..." />
+            </Field>
+            <Btn onClick={save} variant="primary" size="md" className="w-full" style={{ width:'100%', marginTop:4 }}>
+              Continue
+            </Btn>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Step 2 — PR Fetch ──────────────────────────────────────────────────
+// ── PR Fetch screen ────────────────────────────────────────────────────
 
 function PRFetchPanel({ creds, onFetch, onReset }) {
   const [url,     setUrl]     = useState('');
@@ -328,52 +691,45 @@ function PRFetchPanel({ creds, onFetch, onReset }) {
         adoGet(`${base}/repositories/${repoEnc}/pullrequests/${prId}/iterations?api-version=7.1`, creds.pat),
       ]);
 
-      let changedFiles = [];
+      let changedFiles = [], latestIteration = null;
       if (itersResp.value?.length) {
-        const latest     = itersResp.value[itersResp.value.length - 1];
+        latestIteration = itersResp.value[itersResp.value.length - 1];
         const changesResp = await adoGet(
-          `${base}/repositories/${repoEnc}/pullrequests/${prId}/iterations/${latest.id}/changes?api-version=7.1`,
-          creds.pat
+          `${base}/repositories/${repoEnc}/pullrequests/${prId}/iterations/${latestIteration.id}/changes?api-version=7.1`, creds.pat
         );
-        changedFiles = (changesResp.changeEntries || [])
-          .filter(e => e.item?.path)
-          .map(e => ({ path: e.item.path.replace(/^\//, ''), changeType: e.changeType }));
+        changedFiles = (changesResp.changeEntries||[]).filter(e=>e.item?.path)
+          .map(e => ({ path: e.item.path.replace(/^\//,''), changeType: e.changeType }));
       }
 
-      onFetch({
-        parsed,
-        pr,
-        threads: (threadsResp.value || []).filter(t => !t.isDeleted),
-        changedFiles,
-      });
-    } catch(e) {
-      setErr(e.message);
-    } finally {
-      setLoading(false);
-    }
+      onFetch({ parsed, pr, threads:(threadsResp.value||[]).filter(t=>!t.isDeleted), changedFiles, iterations:itersResp.value||[], latestIteration });
+    } catch(e) { setErr(e.message); }
+    finally { setLoading(false); }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
-      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-semibold text-gray-800">Load Pull Request</h2>
-          <button onClick={onReset} className="text-xs text-gray-400 hover:text-red-500 transition">
-            ← Change credentials
+    <div className="auth-bg" style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+      <div className="panel fade-up" style={{ width:'100%', maxWidth:440 }}>
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <h2 style={{ fontSize:14, fontWeight:600, color:'var(--text)', margin:0 }}>Load Pull Request</h2>
+          <button onClick={onReset} style={{ fontSize:11, color:'var(--text-dim)', background:'none', border:'none', cursor:'pointer', padding:'4px 8px', borderRadius:6 }}
+            onMouseEnter={e=>e.target.style.color='var(--red)'} onMouseLeave={e=>e.target.style.color='var(--text-dim)'}>
+            Back to credentials
           </button>
         </div>
-        {err && <Alert msg={err} onClose={() => setErr('')} />}
-        <div className="space-y-4">
+        <div style={{ padding:24 }}>
+          {err && (
+            <div style={{ background:'rgba(248,81,73,0.1)', border:'1px solid rgba(248,81,73,0.3)', borderRadius:8, padding:'10px 14px', fontSize:12, color:'var(--red)', marginBottom:16 }}>
+              {err}
+            </div>
+          )}
           <Field label="Pull Request URL">
-            <input value={url} onChange={e => setUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && load()}
-              className="input"
-              placeholder="https://dev.azure.com/org/project/_git/repo/pullrequest/123" />
+            <input value={url} onChange={e=>setUrl(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&load()}
+              className="inp" placeholder="https://dev.azure.com/org/project/_git/repo/pullrequest/123" />
           </Field>
-          <button onClick={load} disabled={loading || !url.trim()}
-            className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-            {loading ? <><Spin /> Fetching…</> : 'Fetch PR →'}
-          </button>
+          <Btn onClick={load} disabled={loading||!url.trim()} variant="primary" size="md" style={{ width:'100%', marginTop:14 }}>
+            {loading ? <><Spin size={13} /> Fetching...</> : 'Fetch PR'}
+          </Btn>
         </div>
       </div>
     </div>
@@ -382,159 +738,72 @@ function PRFetchPanel({ creds, onFetch, onReset }) {
 
 // ── File tree ──────────────────────────────────────────────────────────
 
+const LABEL_COLORS = { red:'var(--red)', green:'var(--green)', amber:'var(--amber)', purple:'var(--purple)' };
+const LABEL_BG     = { red:'rgba(248,81,73,0.12)', green:'rgba(63,185,80,0.12)', amber:'rgba(210,153,34,0.12)', purple:'rgba(188,140,255,0.12)' };
+
 function FileTree({ files, selected, onSelect }) {
   if (!files.length) return null;
   return (
-    <section>
-      <p className="section-label">Changed Files ({files.length})</p>
-      <div className="space-y-px max-h-64 overflow-y-auto scrollbar-thin">
+    <div>
+      <p className="slabel" style={{ marginBottom:8 }}>Changed Files <span style={{ color:'var(--text-dim)' }}>({files.length})</span></p>
+      <div style={{ maxHeight:260, overflowY:'auto' }}>
         {files.map(f => {
-          const [lbl, cls] = changeLabel(f.changeType);
+          const [lbl, col] = changeLabel(f.changeType);
           const name = f.path.split('/').pop();
-          const active = selected === f.path;
+          const isActive = selected === f.path;
           return (
             <button key={f.path} onClick={() => onSelect(f.path)} title={f.path}
-              className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 text-xs transition
-                ${active ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'}`}>
-              <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-bold ${cls}`}>{lbl}</span>
-              <span className="truncate">{name}</span>
+              style={{
+                width:'100%', textAlign:'left', display:'flex', alignItems:'center', gap:7,
+                padding:'5px 8px', borderRadius:6, marginBottom:1, cursor:'pointer', border:'none',
+                background: isActive ? 'rgba(88,166,255,0.12)' : 'transparent',
+                transition: 'background 0.12s',
+              }}
+              onMouseEnter={e => { if(!isActive) e.currentTarget.style.background='rgba(255,255,255,0.04)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'rgba(88,166,255,0.12)' : 'transparent'; }}>
+              <span style={{
+                fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4, flexShrink:0,
+                color: LABEL_COLORS[col], background: LABEL_BG[col], letterSpacing:'0.04em',
+              }}>{lbl}</span>
+              <span style={{ fontSize:11, fontFamily:'JetBrains Mono', color: isActive ? 'var(--accent)' : 'var(--text-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{name}</span>
             </button>
           );
         })}
       </div>
-    </section>
+    </div>
   );
-}
-
-// ── Client-side diff (LCS) ────────────────────────────────────────────
-// Used when ADO's diff API returns no blocks (new files, modified files, etc.)
-// Fetches both old + new versions and computes a proper unified diff.
-
-function computeClientDiff(oldText, newText, ctxLines = 3) {
-  const oldL = oldText ? oldText.split('\n') : [];
-  const newL = newText ? newText.split('\n') : [];
-  const m = oldL.length, n = newL.length;
-
-  // Pure addition — no old file existed
-  if (m === 0) {
-    return newL.map((t, i) => ({ type: 'add', mln: i + 1, t }));
-  }
-  // Pure deletion — no new file exists
-  if (n === 0) {
-    return oldL.map((t, i) => ({ type: 'del', oln: i + 1, t }));
-  }
-  // Files are identical
-  if (oldText === newText) {
-    return [{ hunk: 'No differences — files are identical.' }];
-  }
-
-  // LCS dynamic programming — O(m × n)
-  // Cap to avoid browser freeze on very large files
-  const CAP = 2000;
-  if (m > CAP || n > CAP) {
-    // Fall back: show as two blocks (all-del then all-add)
-    return [
-      { hunk: `File too large for inline diff (${m}×${n} lines). Showing changes only.` },
-      ...oldL.map((t, i) => ({ type: 'del', oln: i + 1, t })),
-      ...newL.map((t, i) => ({ type: 'add', mln: i + 1, t })),
-    ];
-  }
-
-  const dp = [];
-  for (let i = 0; i <= m; i++) dp[i] = new Uint32Array(n + 1);
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = oldL[i-1] === newL[j-1]
-        ? dp[i-1][j-1] + 1
-        : Math.max(dp[i-1][j], dp[i][j-1]);
-    }
-  }
-
-  // Backtrack to produce ops
-  const ops = [];
-  let i = m, j = n;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldL[i-1] === newL[j-1]) {
-      ops.push({ type: 'ctx', oln: i, mln: j, t: oldL[i-1] });
-      i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
-      ops.push({ type: 'add', mln: j, t: newL[j-1] });
-      j--;
-    } else {
-      ops.push({ type: 'del', oln: i, t: oldL[i-1] });
-      i--;
-    }
-  }
-  ops.reverse();
-
-  // Context windowing — show ctxLines around each change, collapse the rest
-  const vis = new Uint8Array(ops.length);
-  for (let k = 0; k < ops.length; k++) {
-    if (ops[k].type !== 'ctx') {
-      for (let c = Math.max(0, k - ctxLines); c <= Math.min(ops.length - 1, k + ctxLines); c++) {
-        vis[c] = 1;
-      }
-    }
-  }
-
-  const rows = [];
-  let skipping = false;
-  for (let k = 0; k < ops.length; k++) {
-    if (!vis[k]) { skipping = true; continue; }
-    if (skipping || k === 0) {
-      const op = ops[k];
-      rows.push({ hunk: `@@ -${op.oln || '?'},… +${op.mln || '?'},… @@` });
-      skipping = false;
-    }
-    rows.push(ops[k]);
-  }
-  return rows;
-}
-
-// Convert ADO native blocks → same flat-row format as computeClientDiff
-function adoBlocksToRows(blocks) {
-  const rows = [];
-  for (const { changeType = 0, mLines = [], oLines = [], modifiedStart = 1, originalStart = 1, originalCount = 0, modifiedCount = 0 } of blocks) {
-    if (changeType === 0) {
-      rows.push({ hunk: `@@ -${originalStart},${originalCount} +${modifiedStart},${modifiedCount} @@` });
-      mLines.forEach((t, i) => rows.push({ type: 'ctx', oln: originalStart + i, mln: modifiedStart + i, t }));
-    } else if (changeType === 1) {
-      mLines.forEach((t, i) => rows.push({ type: 'add', mln: modifiedStart + i, t }));
-    } else if (changeType === 2) {
-      oLines.forEach((t, i) => rows.push({ type: 'del', oln: originalStart + i, t }));
-    } else {
-      oLines.forEach((t, i) => rows.push({ type: 'del', oln: originalStart + i, t }));
-      mLines.forEach((t, i) => rows.push({ type: 'add', mln: modifiedStart + i, t }));
-    }
-  }
-  return rows;
 }
 
 // ── Diff viewer ────────────────────────────────────────────────────────
 
-function DiffViewer({ creds, parsed, pr, filePath }) {
-  const [tab,     setTab]     = useState('diff');
-  const [rows,    setRows]    = useState(null);   // flat diff rows (unified format)
-  const [full,    setFull]    = useState(null);   // full file text (Full File tab)
-  const [loading, setLoading] = useState(false);
-  const [err,     setErr]     = useState('');
+function DiffViewer({ creds, parsed, pr, filePath, latestIteration, onUsage, model, onDiffLoaded }) {
+  const toast = useToast();
+  const [tab,           setTab]           = useState('diff');
+  const [rows,          setRows]          = useState(null);
+  const [full,          setFull]          = useState(null);
+  const [loading,       setLoading]       = useState(false);
+  const [selLines,      setSelLines]      = useState([]);
+  const [inlineAI,      setInlineAI]      = useState('');
+  const [inlineLoading, setInlineLoading] = useState(false);
+  const [fileSummary,   setFileSummary]   = useState('');
+  const [summLoading,   setSummLoading]   = useState(false);
+  const [postLoading,   setPostLoading]   = useState(false);
+  const [oldText,       setOldText]       = useState('');
+  const [newText,       setNewText]       = useState('');
 
   const base    = apiBase(parsed);
   const repoEnc = encodeURIComponent(parsed.repo);
-  // Prefer GUID for the diff endpoint — more reliable than name
   const repoId  = pr.repository?.id || parsed.repo;
 
   useEffect(() => {
-    setRows(null); setFull(null); setErr(''); setTab('diff');
+    setRows(null); setFull(null); setTab('diff'); setSelLines([]);
+    setInlineAI(''); setFileSummary(''); setOldText(''); setNewText('');
     if (filePath) loadDiff(filePath);
   }, [filePath]);
 
   async function fetchText(path, commitId) {
     const res = await fetch(
-      `${base}/repositories/${repoEnc}/items`
-        + `?path=${encodeURIComponent('/' + path)}`
-        + `&versionDescriptor.version=${encodeURIComponent(commitId)}`
-        + `&versionDescriptor.versionType=commit&api-version=7.1`,
+      `${base}/repositories/${repoEnc}/items?path=${encodeURIComponent('/'+path)}&versionDescriptor.version=${encodeURIComponent(commitId)}&versionDescriptor.versionType=commit&api-version=7.1`,
       { headers: { Authorization: b64(creds.pat), Accept: 'text/plain' } }
     );
     if (!res.ok) throw new Error(`items API ${res.status}`);
@@ -542,120 +811,251 @@ function DiffViewer({ creds, parsed, pr, filePath }) {
   }
 
   async function loadDiff(path) {
-    setLoading(true); setErr('');
+    setLoading(true);
     try {
       const src = pr.lastMergeSourceCommit?.commitId;
       const tgt = pr.lastMergeTargetCommit?.commitId;
-      if (!src || !tgt) throw new Error('PR is missing commit SHAs — cannot diff.');
+      if (!src || !tgt) throw new Error('PR is missing commit SHAs.');
 
-      // ① Try ADO native diff blocks first (fastest when available)
       let adoRows = null;
       try {
         const diffBase = `https://dev.azure.com/${encodeURIComponent(parsed.org)}/${encodeURIComponent(parsed.project)}/_apis/git`;
         const data = await adoGet(
-          `${diffBase}/repositories/${repoId}/diffs/commits`
-            + `?baseVersion=${tgt}&targetVersion=${src}`
-            + `&baseVersionType=commit&targetVersionType=commit`
-            + `&path=${encodeURIComponent('/' + path)}`
-            + `&$top=1000&api-version=7.1`,
+          `${diffBase}/repositories/${repoId}/diffs/commits?baseVersion=${tgt}&targetVersion=${src}&baseVersionType=commit&targetVersionType=commit&path=${encodeURIComponent('/'+path)}&$top=1000&api-version=7.1`,
           creds.pat
         );
         if (data.blocks?.length) adoRows = adoBlocksToRows(data.blocks);
-      } catch(_) { /* fall through to client diff */ }
+      } catch(_) {}
+
+      const [oldR, newR] = await Promise.allSettled([ fetchText(path, tgt), fetchText(path, src) ]);
+      const ot = oldR.status==='fulfilled' ? oldR.value : '';
+      const nt = newR.status==='fulfilled' ? newR.value : '';
+      setOldText(ot); setNewText(nt); setFull(nt || ot);
 
       if (adoRows) {
         setRows(adoRows);
+        const dt = adoRows.filter(r=>!r.hunk&&r.type!=='ctx').map(r=>(r.type==='add'?'+':'-')+r.t).join('\n');
+        onDiffLoaded?.(path, dt);
         return;
       }
-
-      // ② ADO returned no blocks → fetch both versions and diff client-side.
-      //    This handles new files, deleted files, and any case ADO can't diff.
-      const [oldResult, newResult] = await Promise.allSettled([
-        fetchText(path, tgt),   // old (target/base commit)
-        fetchText(path, src),   // new (source/head commit)
-      ]);
-      const oldText = oldResult.status === 'fulfilled' ? oldResult.value : '';
-      const newText = newResult.status === 'fulfilled' ? newResult.value : '';
-
-      setRows(computeClientDiff(oldText, newText));
+      const cr = computeClientDiff(ot, nt);
+      setRows(cr);
+      const dt = cr.filter(r=>!r.hunk&&r.type!=='ctx').map(r=>(r.type==='add'?'+':'-')+r.t).join('\n');
+      onDiffLoaded?.(path, dt);
     } catch(e) {
-      setErr(e.message); setRows([]);
-    } finally {
-      setLoading(false);
-    }
+      toast(e.message, 'error'); setRows([]);
+    } finally { setLoading(false); }
   }
 
-  async function loadFull(path) {
-    setLoading(true); setErr('');
+  function toggleLine(idx) {
+    setSelLines(prev => prev.includes(idx) ? prev.filter(i=>i!==idx) : [...prev, idx]);
+    setInlineAI('');
+  }
+  function clearSel() { setSelLines([]); setInlineAI(''); }
+
+  function getSelectedCode() {
+    if (!rows) return '';
+    return [...selLines].sort((a,b)=>a-b).map(i => {
+      const row = rows[i]; if (!row||row.hunk) return '';
+      return (row.type==='add'?'+':row.type==='del'?'-':' ')+row.t;
+    }).filter(Boolean).join('\n');
+  }
+
+  async function runInlineAI(action) {
+    const code = getSelectedCode();
+    if (!code.trim() || selLines.length === 0) return;
+    setInlineLoading(true); setInlineAI('');
     try {
-      const src = pr.lastMergeSourceCommit?.commitId;
-      setFull(await fetchText(path, src));
-    } catch(e) {
-      setErr(e.message);
-    } finally {
-      setLoading(false);
-    }
+      const firstRow = rows[Math.min(...selLines)];
+      const lineNum  = firstRow?.mln || firstRow?.oln || '?';
+      let prompt = `You are reviewing a pull request.\nPR: "${pr.title}"`;
+      if (creds.context) prompt += `\nContext: ${creds.context}`;
+      if (filePath) prompt += `\nFile: ${filePath} (line ${lineNum})`;
+      prompt += `\n\nSelected code:\n\`\`\`\n${code}\n\`\`\`\n\n`;
+      if (action==='explain') prompt += 'Explain what this code does and highlight any concerns. Use markdown formatting.';
+      else if (action==='suggest') prompt += 'Suggest a concrete improvement or fix. Include a code snippet of the improved version. Use markdown.';
+      else if (action==='security') prompt += 'Perform a focused security review. List vulnerabilities, risks, and anti-patterns. Use markdown with clear headings.';
+      const { text, inputTokens, outputTokens } = await claude(creds.anthropicKey, prompt, model, 1200);
+      setInlineAI(text); onUsage?.(inputTokens, outputTokens);
+    } catch(e) { toast(e.message, 'error'); }
+    finally { setInlineLoading(false); }
   }
 
-  function switchTab(t) {
-    setTab(t);
-    if (t === 'full' && full === null && !loading && filePath) loadFull(filePath);
-    if (t === 'diff' && rows === null && !loading && filePath) loadDiff(filePath);
+  async function runFileSummary() {
+    if (!filePath) return;
+    setSummLoading(true); setFileSummary('');
+    try {
+      let prompt = `You are reviewing a pull request.\nPR: "${pr.title}"`;
+      if (creds.context) prompt += `\nContext: ${creds.context}`;
+      prompt += `\nFile: ${filePath}\n\n`;
+      if (oldText && newText && oldText !== newText) {
+        const diffRows = rows || computeClientDiff(oldText, newText);
+        const diffText = diffRows.filter(r=>!r.hunk&&r.type!=='ctx').map(r=>(r.type==='add'?'+':'-')+r.t).join('\n');
+        prompt += `Changed lines:\n\`\`\`\n${diffText.slice(0,4000)}\n\`\`\`\n\n`;
+      } else if (newText) {
+        prompt += `File content:\n\`\`\`\n${newText.slice(0,4000)}\n\`\`\`\n\n`;
+      }
+      prompt += `Summarize this file's changes using markdown. Cover: 1) Purpose of changes, 2) Risks or issues, 3) Any conventions violated.`;
+      const { text, inputTokens, outputTokens } = await claude(creds.anthropicKey, prompt, model, 1200);
+      setFileSummary(text); onUsage?.(inputTokens, outputTokens);
+    } catch(e) { toast(e.message, 'error'); }
+    finally { setSummLoading(false); }
   }
 
-  if (!filePath) {
-    return (
-      <div className="bg-white rounded-xl border border-gray-200 flex items-center justify-center h-36 text-sm text-gray-400">
-        ← Select a file to view its diff
+  async function postInlineComment(commentText, lineNum) {
+    if (!commentText.trim() || !filePath) return;
+    setPostLoading(true);
+    try {
+      const iterId = latestIteration?.id || 1;
+      await adoPost(
+        `${base}/repositories/${repoEnc}/pullrequests/${parsed.prId}/threads?api-version=7.1`,
+        creds.pat,
+        {
+          comments: [{ parentCommentId:0, content:commentText, commentType:1 }],
+          status: 1,
+          threadContext: { filePath:'/'+filePath, rightFileStart:{line:lineNum,offset:1}, rightFileEnd:{line:lineNum,offset:1} },
+          pullRequestThreadContext: { changeTrackingId:1, iterationContext:{ firstComparingIteration:1, secondComparingIteration:iterId } },
+        }
+      );
+      toast(`Inline comment posted on line ${lineNum}`, 'success');
+      clearSel();
+    } catch(e) { toast(e.message, 'error'); }
+    finally { setPostLoading(false); }
+  }
+
+  async function postFileComment(commentText) {
+    if (!commentText.trim() || !filePath) return;
+    setPostLoading(true);
+    try {
+      await adoPost(
+        `${base}/repositories/${repoEnc}/pullrequests/${parsed.prId}/threads?api-version=7.1`,
+        creds.pat,
+        { comments:[{parentCommentId:0,content:commentText,commentType:1}], status:1, threadContext:{filePath:'/'+filePath} }
+      );
+      toast(`File comment posted on ${filePath.split('/').pop()}`, 'success');
+    } catch(e) { toast(e.message, 'error'); }
+    finally { setPostLoading(false); }
+  }
+
+  if (!filePath) return (
+    <div className="panel" style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:48, textAlign:'center' }}>
+      <div style={{ width:40, height:40, borderRadius:10, background:'var(--surface)', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:12 }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
       </div>
-    );
-  }
+      <p style={{ fontSize:13, color:'var(--text-muted)', margin:0 }}>Select a file to view its diff</p>
+      <p style={{ fontSize:11, color:'var(--text-dim)', margin:'4px 0 0' }}>Click any file in the sidebar</p>
+    </div>
+  );
+
+  const firstSelRow = selLines.length > 0 ? rows?.[Math.min(...selLines)] : null;
+  const firstSelLine = firstSelRow?.mln || firstSelRow?.oln || 1;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b bg-gray-50">
-        <span className="text-sm font-mono text-gray-700 truncate flex-1">{filePath}</span>
-        <div className="flex border border-gray-200 rounded overflow-hidden shrink-0">
-          {['diff','full'].map(t => (
-            <button key={t} onClick={() => switchTab(t)}
-              className={`px-3 py-1 text-xs font-medium transition
-                ${tab === t ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-              {t === 'diff' ? 'Diff' : 'Full File'}
-            </button>
-          ))}
+    <div className="panel" style={{ overflow:'hidden' }}>
+      {/* File header */}
+      <div className="panel-header" style={{ padding:'10px 14px', display:'flex', alignItems:'center', gap:10 }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span style={{ fontFamily:'JetBrains Mono', fontSize:11, color:'var(--text-muted)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{filePath}</span>
+        <div style={{ display:'flex', gap:6 }}>
+          <Btn onClick={runFileSummary} disabled={summLoading} variant="secondary" size="xs">
+            {summLoading ? <><Spin size={11} /> Analyzing...</> : 'Summarize File'}
+          </Btn>
+          {selLines.length > 0 && (
+            <span style={{ fontSize:11, color:'var(--accent)', fontWeight:500, padding:'0 4px' }}>
+              {selLines.length} line{selLines.length>1?'s':''} selected
+            </span>
+          )}
         </div>
       </div>
-      <div className="overflow-auto max-h-[520px] scrollbar-thin">
-        {loading && <div className="p-8 text-center text-sm text-gray-400"><Spin /> Computing diff…</div>}
-        {!loading && err && <div className="p-4"><Alert msg={err} onClose={() => setErr('')} /></div>}
-        {!loading && !err && tab === 'diff' && rows !== null && <DiffTable rows={rows} />}
-        {!loading && !err && tab === 'full' && full !== null && <FullFile  content={full} />}
+
+      {/* Tabs */}
+      <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 14px', background:'var(--surface)' }}>
+        {['diff','full'].map(t => (
+          <button key={t} onClick={()=>setTab(t)} className={`tab ${tab===t?'active':''}`}>
+            {t==='diff' ? 'Diff' : 'Full File'}
+          </button>
+        ))}
       </div>
+
+      {/* File summary */}
+      {(fileSummary || summLoading) && (
+        <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--border)', background:'rgba(88,166,255,0.04)' }}>
+          {summLoading ? <SkeletonBlock /> : (
+            <div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                <span className="slabel">File Summary</span>
+                <PostCommentModal onPost={postFileComment} loading={postLoading} label="Post File Comment" filePath={filePath} />
+              </div>
+              <MarkdownOutput text={fileSummary} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Inline AI selection bar */}
+      {selLines.length > 0 && (
+        <div style={{ padding:'8px 14px', background:'rgba(88,166,255,0.06)', borderBottom:'1px solid rgba(88,166,255,0.15)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          <span style={{ fontSize:11, color:'var(--accent)', fontWeight:600 }}>Lines selected —</span>
+          <Btn onClick={()=>runInlineAI('explain')}   disabled={inlineLoading} variant="secondary" size="xs">Explain</Btn>
+          <Btn onClick={()=>runInlineAI('suggest')}   disabled={inlineLoading} variant="secondary" size="xs">Suggest Fix</Btn>
+          <Btn onClick={()=>runInlineAI('security')}  disabled={inlineLoading} variant="secondary" size="xs">Security Scan</Btn>
+          <Btn onClick={clearSel} variant="ghost" size="xs">Clear</Btn>
+        </div>
+      )}
+
+      {/* Inline AI result */}
+      {(inlineAI || inlineLoading) && (
+        <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--border)', background:'var(--surface)' }}>
+          {inlineLoading ? <SkeletonBlock /> : (
+            <div className="fade-up">
+              <MarkdownOutput text={inlineAI} />
+              <div style={{ display:'flex', gap:8, marginTop:12 }}>
+                <PostCommentModal onPost={(txt)=>postInlineComment(txt,firstSelLine)} loading={postLoading} label="Post as Inline Comment" filePath={filePath} lineNum={firstSelLine} defaultText={inlineAI} />
+                <Btn onClick={()=>setInlineAI('')} variant="ghost" size="xs">Dismiss</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Diff content */}
+      {loading && (
+        <div style={{ padding:20 }}>
+          <SkeletonLine w="40%" h={11} />
+          {[...Array(8)].map((_,i) => <SkeletonLine key={i} w={`${55+Math.random()*40}%`} h={11} />)}
+        </div>
+      )}
+      {!loading && rows !== null && (
+        <div style={{ overflow:'auto', maxHeight:520, background:'var(--bg)' }}>
+          {tab === 'diff' && <DiffTable rows={rows} selLines={selLines} onToggleLine={toggleLine} />}
+          {tab === 'full' && full && <FullFile content={full} />}
+        </div>
+      )}
     </div>
   );
 }
 
-function DiffTable({ rows }) {
-  if (!rows.length) return (
-    <div className="p-4 text-sm text-gray-500">No differences found.</div>
-  );
-
+function DiffTable({ rows, selLines, onToggleLine }) {
   return (
     <table className="code-table">
       <tbody>
-        {rows.map((row, i) => {
+        {rows.map((row, idx) => {
           if (row.hunk) return (
-            <tr key={i} className="hunk-row"><td colSpan={4}>{row.hunk}</td></tr>
+            <tr key={idx} className="hunk-row">
+              <td colSpan={4} style={{ padding:'4px 12px' }}>{row.hunk}</td>
+            </tr>
           );
-          const rowCls  = row.type === 'add' ? 'diff-add' : row.type === 'del' ? 'diff-del' : 'diff-ctx';
-          const sign    = row.type === 'add' ? '+'         : row.type === 'del' ? '−'        : ' ';
-          const signCls = row.type === 'add' ? 'sign-add'  : row.type === 'del' ? 'sign-del' : 'sign-ctx';
+          const isAdd=row.type==='add', isDel=row.type==='del';
+          const sel = selLines.includes(idx);
           return (
-            <tr key={i} className={rowCls}>
-              <td className="ln">{row.oln || ''}</td>
-              <td className="ln">{row.mln || ''}</td>
-              <td className={signCls}>{sign}</td>
-              <td className="px-2">{row.t}</td>
+            <tr key={idx}
+              className={`diff-row-selectable ${isAdd?'diff-add':isDel?'diff-del':'diff-ctx'} ${sel?'diff-row-selected':''}`}
+              onClick={()=>onToggleLine(idx)}
+              title="Click to select for AI analysis or inline comment">
+              <td className="ln">{row.oln||''}</td>
+              <td className="ln">{row.mln||''}</td>
+              <td className={isAdd?'sign-add':isDel?'sign-del':'sign-ctx'}>{isAdd?'+':isDel?'-':' '}</td>
+              <td style={{ paddingLeft:8 }}>{row.t}</td>
             </tr>
           );
         })}
@@ -670,8 +1070,9 @@ function FullFile({ content }) {
       <tbody>
         {content.split('\n').map((line, i) => (
           <tr key={i} className="diff-ctx">
-            <td className="ln" colSpan={2}>{i + 1}</td>
-            <td className="px-2">{line}</td>
+            <td className="ln" colSpan={2}>{i+1}</td>
+            <td className="sign-ctx"> </td>
+            <td style={{ paddingLeft:8 }}>{line}</td>
           </tr>
         ))}
       </tbody>
@@ -679,50 +1080,518 @@ function FullFile({ content }) {
   );
 }
 
+// ── Post Comment Modal ─────────────────────────────────────────────────
+
+function PostCommentModal({ onPost, loading, label, filePath, lineNum, defaultText = '' }) {
+  const [open,  setOpen]  = useState(false);
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => { if (open) setDraft(defaultText); }, [open]);
+
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') { setOpen(false); setDraft(''); } }
+    if (open) document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  return (
+    <>
+      <Btn onClick={()=>setOpen(true)} variant="primary" size="xs">{label}</Btn>
+      {open && (
+        <div className="modal-bg" style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:16 }}>
+          <div className="panel fade-up" style={{ width:'100%', maxWidth:520 }}>
+            <div style={{ padding:'16px 20px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div>
+                <h3 style={{ fontSize:14, fontWeight:600, color:'var(--text)', margin:0 }}>{label}</h3>
+                <p style={{ fontSize:11, color:'var(--text-muted)', margin:'2px 0 0', fontFamily:'JetBrains Mono' }}>
+                  {filePath}{lineNum ? ` : ${lineNum}` : ''}
+                </p>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <kbd>Esc</kbd>
+                <button onClick={()=>{setOpen(false);setDraft('');}} style={{ background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:14, lineHeight:1 }}>x</button>
+              </div>
+            </div>
+            <div style={{ padding:20 }}>
+              <textarea value={draft} onChange={e=>setDraft(e.target.value)} rows={6}
+                className="inp" style={{ resize:'vertical', fontFamily:'JetBrains Mono', fontSize:12, lineHeight:1.6 }}
+                placeholder="Write your comment..." />
+              <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:12 }}>
+                <Btn onClick={()=>{setOpen(false);setDraft('');}} variant="secondary" size="sm">Cancel</Btn>
+                <Btn onClick={()=>{ onPost(draft); setOpen(false); setDraft(''); }}
+                  disabled={loading||!draft.trim()} variant="primary" size="sm">
+                  {loading ? <><Spin size={12} /> Posting...</> : 'Post Comment'}
+                </Btn>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── File/image reader utility ──────────────────────────────────────────
+
+function readFileAsText(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result);
+    r.onerror = () => rej(new Error('File read failed'));
+    r.readAsText(file);
+  });
+}
+function readFileAsBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result.split(',')[1]);
+    r.onerror = () => rej(new Error('File read failed'));
+    r.readAsDataURL(file);
+  });
+}
+
+// ── Full PR Review ─────────────────────────────────────────────────────
+// Phase 1: Context modal (optional user notes + file attachments)
+// Phase 2: Results + post-to-PR
+
+function FullPRReview({ creds, pr, changedFiles, threads, onUsage, model, parsed, latestIteration }) {
+  const toast = useToast();
+  // phase: 'idle' | 'input' | 'loading' | 'result'
+  const [phase,       setPhase]       = useState('idle');
+  const [result,      setResult]      = useState(null);
+  // User inputs in the context modal
+  const [userContext, setUserContext] = useState('');
+  const [attachments, setAttachments] = useState([]); // [{ name, type, content, isImage, b64 }]
+  const [postingReview, setPostingReview] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const base    = apiBase(parsed);
+  const repoEnc = encodeURIComponent(parsed.repo);
+
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape' && phase !== 'loading') setPhase('idle'); }
+    if (phase !== 'idle') document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [phase]);
+
+  async function handleFileAttach(e) {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      const isImage = file.type.startsWith('image/');
+      const isBinary = !isImage && !['text/','application/json','application/xml'].some(t=>file.type.startsWith(t)) && !file.name.match(/\.(txt|md|csv|json|xml|yaml|yml|toml|py|js|ts|jsx|tsx|sql|sh|env)$/i);
+      if (isBinary) { toast(`${file.name} is not a supported file type`, 'warn'); continue; }
+      try {
+        if (isImage) {
+          const b64  = await readFileAsBase64(file);
+          setAttachments(p => [...p, { name:file.name, type:file.type, isImage:true, b64, size:file.size }]);
+        } else {
+          const text = await readFileAsText(file);
+          setAttachments(p => [...p, { name:file.name, type:file.type, isImage:false, content:text.slice(0,8000), size:file.size }]);
+        }
+      } catch(err) { toast(`Failed to read ${file.name}: ${err.message}`, 'error'); }
+    }
+    e.target.value = '';
+  }
+
+  async function fetchText(path, commitId) {
+    const res = await fetch(
+      `${base}/repositories/${repoEnc}/items?path=${encodeURIComponent('/'+path)}&versionDescriptor.version=${encodeURIComponent(commitId)}&versionDescriptor.versionType=commit&api-version=7.1`,
+      { headers: { Authorization: b64(creds.pat), Accept: 'text/plain' } }
+    );
+    if (!res.ok) return '';
+    return res.text();
+  }
+
+  async function run() {
+    setPhase('loading'); setResult(null);
+    try {
+      const src = pr.lastMergeSourceCommit?.commitId;
+      const tgt = pr.lastMergeTargetCommit?.commitId;
+      const filesToReview = changedFiles.slice(0, 5);
+      const fileDiffs = await Promise.all(filesToReview.map(async f => {
+        const [ot, nt] = await Promise.all([
+          src && tgt ? fetchText(f.path, tgt).catch(()=>'') : Promise.resolve(''),
+          src ? fetchText(f.path, src).catch(()=>'') : Promise.resolve(''),
+        ]);
+        const dr = computeClientDiff(ot, nt);
+        const changed = dr.filter(r=>!r.hunk&&r.type!=='ctx').map(r=>(r.type==='add'?'+':'-')+r.t).join('\n');
+        return { path: f.path, diff: changed.slice(0, 1500) };
+      }));
+
+      const activeThreads = threads.filter(t=>!t.isDeleted&&t.comments?.length&&['active','pending'].includes(t.status));
+
+      // Build message array for Claude API (supports images via vision)
+      const messageContent = [];
+
+      // Text prompt
+      let textPrompt = `You are a senior software engineer and architect performing a comprehensive pull request review.\n`;
+      textPrompt += `PR: "${pr.title}" (#${pr.pullRequestId})\n`;
+      if (pr.description) textPrompt += `Description: ${pr.description.slice(0,500)}\n`;
+      if (creds.context) textPrompt += `Project context: ${creds.context}\n`;
+      if (userContext.trim()) textPrompt += `\nReviewer's additional context:\n${userContext.trim()}\n`;
+      // Inject team conventions
+      const allConventions = (() => { try { return JSON.parse(sessionStorage.getItem('pr_review_conventions')||'[]'); } catch { return []; } })();
+      if (allConventions.length) textPrompt += `\nTeam coding conventions (must check each one):\n${allConventions.map((c,i)=>`${i+1}. ${c}`).join('\n')}\n`;
+      textPrompt += `\nBranch: ${(pr.sourceRefName||'').replace('refs/heads/','')} -> ${(pr.targetRefName||'').replace('refs/heads/','')}\n`;
+      textPrompt += `Changed files (${changedFiles.length} total, showing up to 5):\n`;
+      fileDiffs.forEach(f => { textPrompt += `\n--- ${f.path} ---\n${f.diff||'(no diff / binary)'}\n`; });
+      if (changedFiles.length > 5) textPrompt += `\n...and ${changedFiles.length-5} more files.\n`;
+      if (activeThreads.length) {
+        textPrompt += `\nOpen review threads (${activeThreads.length}):\n`;
+        activeThreads.slice(0,5).forEach((t,i) => {
+          textPrompt += `${i+1}. [${t.threadContext?.filePath||'PR'}] ${(t.comments[0]?.content||'').slice(0,200)}\n`;
+        });
+      }
+      // Append text attachments
+      const textAttachments = attachments.filter(a=>!a.isImage);
+      if (textAttachments.length) {
+        textPrompt += `\nAttached reference files:\n`;
+        textAttachments.forEach(a => { textPrompt += `\n=== ${a.name} ===\n${a.content}\n`; });
+      }
+      textPrompt += `\nRespond ONLY with a valid JSON object (no markdown fences, no preamble, no extra text outside the JSON).
+
+The "postComment" field must contain a complete, standalone Azure DevOps PR comment written in clean markdown. Requirements for postComment:
+- Start with ## AI Review Summary
+- Use a status line: **Status:** Approved / Request Changes / Approved with Suggestions
+- Use a **Walkthrough** paragraph (plain prose, no bullets)
+- Use markdown tables for issues, one table per severity group (Must Fix, Should Fix, Minor, Security). Table columns: | File | Issue | Suggestion |
+- Use a **Checklist** section with a markdown table: | Item | Status | where Status is Y, N, or ? 
+- End with a horizontal rule and a note that this review was generated by an AI assistant and should be validated by a human reviewer
+- Do NOT include any JSON syntax, curly braces, brackets, or raw field names anywhere in postComment
+- Write postComment as if it is a senior engineer's review comment — professional, precise, actionable
+- Keep total length under 3000 characters
+
+JSON structure:
+{"classification":"Red|Yellow|Green","summary":"2-3 sentence plain-language assessment","risk":"Breaking change|Safe refactor|Logic change|Config change|Unknown","walkthrough":"one paragraph","mustFix":[{"file":"","line":null,"issue":"","suggestion":""}],"shouldFix":[{"file":"","line":null,"issue":"","suggestion":""}],"minor":[{"file":"","line":null,"issue":"","suggestion":""}],"security":[{"file":"","line":null,"issue":""}],"checklist":{"hasTests":null,"hasMigration":null,"breakingChange":null,"docUpdated":null,"namingConsistent":null},"postComment":"[full markdown comment here]"}`;
+
+      messageContent.push({ type:'text', text: textPrompt });
+
+      // Append image attachments
+      const imageAttachments = attachments.filter(a=>a.isImage);
+      imageAttachments.forEach(a => {
+        messageContent.push({ type:'text', text:`\nAttached screenshot/image: ${a.name}` });
+        messageContent.push({ type:'image', source:{ type:'base64', media_type:a.type, data:a.b64 } });
+      });
+
+      // Call Claude API directly (supports multimodal)
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{ 'x-api-key':creds.anthropicKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true', 'Content-Type':'application/json' },
+        body: JSON.stringify({ model, max_tokens:3000, messages:[{ role:'user', content: messageContent }] }),
+      });
+      if (!r.ok) { const t=await r.text().catch(()=>''); throw new Error(`Claude ${r.status}: ${t.slice(0,300)}`); }
+      const d = await r.json();
+      const text = d.content[0].text;
+      onUsage?.(d.usage?.input_tokens||0, d.usage?.output_tokens||0);
+
+      try { setResult(JSON.parse(text.replace(/```json|```/g,'').trim())); }
+      catch(_) { setResult({ summary:text, classification:'Yellow', walkthrough:'', mustFix:[], shouldFix:[], minor:[], security:[], checklist:{}, postComment:text }); }
+      setPhase('result');
+    } catch(e) { toast(e.message, 'error'); setPhase('input'); }
+  }
+
+  // Sanitize the postComment field before posting to ADO.
+  // Claude occasionally leaks JSON syntax into markdown text fields.
+  // This strips: leading/trailing JSON braces, raw field name patterns, code fences.
+  function sanitizePostComment(raw) {
+    if (!raw) return '';
+    let s = raw.trim();
+    // Strip leading/trailing JSON object wrappers if the whole string is JSON
+    if (s.startsWith('{') && s.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(s);
+        if (parsed.postComment) return sanitizePostComment(parsed.postComment);
+      } catch(_) {}
+    }
+    // Strip ```json fences
+    s = s.replace(/```json[\s\S]*?```/g, '').replace(/```[\s\S]*?```/g, match => {
+      // Keep code blocks that look like intentional code, not JSON dumps
+      const inner = match.replace(/```\w*\n?/, '').replace(/```$/, '');
+      if (inner.trim().startsWith('{') && inner.includes('"classification"')) return '';
+      return match;
+    });
+    // Strip raw JSON field patterns at line starts: "fieldName": value,
+    s = s.replace(/^\s*"(classification|summary|risk|walkthrough|mustFix|shouldFix|minor|security|checklist|postComment|hasTests|hasMigration|breakingChange|docUpdated|namingConsistent)"[\s\S]*$/gm, '');
+    // Collapse multiple blank lines
+    s = s.replace(/\n{3,}/g, '\n\n').trim();
+    return s;
+  }
+
+  async function postReviewComment() {
+    if (!result?.postComment) return;
+    setPostingReview(true);
+    try {
+      const clean = sanitizePostComment(result.postComment);
+      await adoPost(
+        `${base}/repositories/${repoEnc}/pullrequests/${parsed.prId}/threads?api-version=7.1`,
+        creds.pat,
+        { comments:[{ parentCommentId:0, content: clean, commentType:1 }], status:1 }
+      );
+      toast('Review comment posted to PR', 'success');
+    } catch(e) { toast(e.message, 'error'); }
+    finally { setPostingReview(false); }
+  }
+
+  const CLS_COLOR = { Red:'var(--red)', Yellow:'var(--amber)', Green:'var(--green)' };
+  const CLS_BG    = { Red:'rgba(248,81,73,0.1)', Yellow:'rgba(210,153,34,0.1)', Green:'rgba(63,185,80,0.1)' };
+  const CLS_BORDER= { Red:'rgba(248,81,73,0.3)', Yellow:'rgba(210,153,34,0.3)', Green:'rgba(63,185,80,0.3)' };
+
+  function IssueList({ items, label, variant }) {
+    if (!items?.length) return null;
+    return (
+      <div style={{ marginBottom:16 }}>
+        <p className="slabel" style={{ marginBottom:8 }}>{label} <span style={{ color:'var(--text-dim)', fontWeight:400, textTransform:'none', letterSpacing:0 }}>({items.length})</span></p>
+        {items.map((item,i) => (
+          <div key={i} className={`sev-${variant}`} style={{ padding:'10px 14px', marginBottom:6 }}>
+            {item.file && <div style={{ fontFamily:'JetBrains Mono', fontSize:10, color:'var(--text-muted)', marginBottom:4 }}>{item.file}{item.line?`:${item.line}`:''}</div>}
+            <p style={{ fontSize:12, fontWeight:600, color:'var(--text)', margin:'0 0 4px' }}>{item.issue}</p>
+            {item.suggestion && <p style={{ fontSize:12, color:'var(--text-muted)', margin:0, lineHeight:1.55 }}>{item.suggestion}</p>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function ChecklistRow({ label, val }) {
+    const s = val===true?'pass':val===false?'fail':'unknown';
+    return (
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 12px', borderRadius:6,
+        background: s==='pass'?'rgba(63,185,80,0.08)':s==='fail'?'rgba(248,81,73,0.08)':'rgba(255,255,255,0.03)', marginBottom:3 }}>
+        <span style={{ fontSize:12, color:'var(--text-muted)' }}>{label}</span>
+        <span style={{ fontFamily:'JetBrains Mono', fontSize:11, fontWeight:700, color: s==='pass'?'var(--green)':s==='fail'?'var(--red)':'var(--text-dim)' }}>
+          {s==='pass'?'Y':s==='fail'?'N':'?'}
+        </span>
+      </div>
+    );
+  }
+
+  // Total issues count badge for the trigger button
+  const issueCount = result ? (result.mustFix?.length||0)+(result.security?.length||0)+(result.shouldFix?.length||0) : 0;
+
+  return (
+    <>
+      {/* Trigger button */}
+      <Btn onClick={()=>setPhase('input')} variant="violet" size="sm" disabled={phase==='loading'}>
+        {phase==='loading' ? <><Spin size={12} /> Reviewing...</> : (
+          <>
+            Full PR Review
+            {issueCount > 0 && <span style={{ background:'var(--red)', color:'#fff', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:999, marginLeft:2 }}>{issueCount}</span>}
+          </>
+        )}
+      </Btn>
+
+      {/* Phase 1: Context input modal */}
+      {phase === 'input' && (
+        <div className="modal-bg" style={{ position:'fixed', inset:0, display:'flex', alignItems:'flex-start', justifyContent:'center', zIndex:100, padding:16, paddingTop:32, overflowY:'auto' }}>
+          <div className="panel fade-up" style={{ width:'100%', maxWidth:600, marginBottom:32 }}>
+            {/* Header */}
+            <div style={{ padding:'16px 20px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+              <div>
+                <h2 style={{ fontSize:15, fontWeight:700, color:'var(--text)', margin:0 }}>Full PR Review</h2>
+                <p style={{ fontSize:11, color:'var(--text-muted)', margin:'3px 0 0', fontFamily:'JetBrains Mono' }}>#{pr.pullRequestId} — {changedFiles.length} files changed</p>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <kbd>Esc</kbd>
+                <button onClick={()=>setPhase('idle')} style={{ background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:14 }}>x</button>
+              </div>
+            </div>
+
+            <div style={{ padding:20 }}>
+              {/* PR context summary */}
+              <div style={{ background:'rgba(88,166,255,0.06)', border:'1px solid rgba(88,166,255,0.15)', borderRadius:8, padding:'10px 14px', marginBottom:16 }}>
+                <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:4, fontWeight:600 }}>What will be reviewed</div>
+                <div style={{ fontSize:12, color:'var(--text)', lineHeight:1.6 }}>
+                  {changedFiles.slice(0,4).map(f=>(
+                    <span key={f.path} style={{ fontFamily:'JetBrains Mono', fontSize:10, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px', marginRight:4, marginBottom:4, display:'inline-block' }}>
+                      {f.path.split('/').pop()}
+                    </span>
+                  ))}
+                  {changedFiles.length > 4 && <span style={{ fontSize:11, color:'var(--text-dim)' }}>+{changedFiles.length-4} more</span>}
+                </div>
+              </div>
+
+              {/* Optional reviewer context */}
+              <Field label="Additional context for Claude (optional)" hint="Describe the intent of this PR, known trade-offs, areas to focus on, or anything the reviewer should understand.">
+                <textarea value={userContext} onChange={e=>setUserContext(e.target.value)} rows={4}
+                  className="inp" style={{ resize:'vertical', lineHeight:1.6 }}
+                  placeholder="e.g. This PR migrates the Snowflake ETL pipeline from password auth to key-pair. Focus on the PEM loading logic and the fallback handling. The performance regression in test X is known and acceptable." />
+              </Field>
+
+              {/* File attachments */}
+              <div style={{ marginTop:14 }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                  <label style={{ fontSize:12, fontWeight:500, color:'var(--text-muted)' }}>Attachments <span style={{ color:'var(--text-dim)', fontWeight:400 }}>(optional)</span></label>
+                  <Btn onClick={()=>fileInputRef.current?.click()} variant="secondary" size="xs">Attach Files</Btn>
+                </div>
+                <input ref={fileInputRef} type="file" multiple accept="image/*,.txt,.md,.csv,.json,.xml,.yaml,.yml,.toml,.py,.js,.ts,.jsx,.tsx,.sql,.sh" style={{ display:'none' }} onChange={handleFileAttach} />
+                <div style={{ fontSize:10, color:'var(--text-dim)', marginBottom:8 }}>
+                  Supports: images (screenshots, diagrams), .md, .txt, .csv, .json, .yaml, .py, .js, .ts, .sql
+                </div>
+                {attachments.length > 0 && (
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                    {attachments.map((a,i) => (
+                      <div key={i} style={{ display:'flex', alignItems:'center', gap:6, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:6, padding:'4px 8px 4px 6px' }}>
+                        {a.isImage && a.b64 && (
+                          <img src={`data:${a.type};base64,${a.b64}`} alt={a.name} style={{ width:28, height:28, objectFit:'cover', borderRadius:3, border:'1px solid var(--border)' }} />
+                        )}
+                        {!a.isImage && (
+                          <span style={{ fontSize:9, fontFamily:'JetBrains Mono', background:'var(--card)', color:'var(--accent)', padding:'1px 4px', borderRadius:3 }}>
+                            {a.name.split('.').pop().toUpperCase()}
+                          </span>
+                        )}
+                        <span style={{ fontSize:11, color:'var(--text-muted)', maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.name}</span>
+                        <button onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==i))}
+                          style={{ background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:11, padding:0, lineHeight:1 }}>x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:20, paddingTop:16, borderTop:'1px solid var(--border)' }}>
+                <Btn onClick={()=>setPhase('idle')} variant="secondary" size="sm">Cancel</Btn>
+                <Btn onClick={run} variant="violet" size="sm">
+                  Start Review
+                </Btn>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 2: Loading */}
+      {phase === 'loading' && (
+        <div className="modal-bg" style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:16 }}>
+          <div className="panel fade-up" style={{ width:'100%', maxWidth:400, padding:40, textAlign:'center' }}>
+            <div style={{ display:'flex', justifyContent:'center', marginBottom:16 }}><LoadingDots /></div>
+            <p style={{ fontSize:14, fontWeight:600, color:'var(--text)', margin:'0 0 6px' }}>Reviewing PR...</p>
+            <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>Fetching diffs, analyzing code, checking security</p>
+            {attachments.length > 0 && <p style={{ fontSize:11, color:'var(--text-dim)', marginTop:8 }}>Including {attachments.length} attachment{attachments.length>1?'s':''}</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Phase 3: Results */}
+      {phase === 'result' && result && (
+        <div className="modal-bg" style={{ position:'fixed', inset:0, display:'flex', alignItems:'flex-start', justifyContent:'center', zIndex:100, padding:16, paddingTop:24, overflowY:'auto' }}>
+          <div className="panel fade-up" style={{ width:'100%', maxWidth:700, marginBottom:32 }}>
+            {/* Header */}
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <span style={{ fontSize:12, fontWeight:700, padding:'4px 12px', borderRadius:999, background:CLS_BG[result.classification]||CLS_BG.Yellow, color:CLS_COLOR[result.classification]||CLS_COLOR.Yellow, border:`1px solid ${CLS_BORDER[result.classification]||CLS_BORDER.Yellow}` }}>
+                  {result.classification||'Yellow'}
+                </span>
+                <span style={{ fontSize:12, fontWeight:500, padding:'4px 12px', borderRadius:999, background:'var(--surface)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>
+                  {result.risk}
+                </span>
+                <h2 style={{ fontSize:14, fontWeight:600, color:'var(--text)', margin:0 }}>Full PR Review</h2>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <kbd>Esc</kbd>
+                <Btn onClick={()=>setPhase('input')} variant="ghost" size="xs">Back</Btn>
+                <button onClick={()=>setPhase('idle')} style={{ background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:14 }}>x</button>
+              </div>
+            </div>
+
+            <div style={{ padding:20 }}>
+              {/* Summary */}
+              <p style={{ fontSize:13, color:'var(--text)', lineHeight:1.7, marginBottom:14, padding:'10px 14px', background:'rgba(255,255,255,0.03)', borderRadius:8, border:'1px solid var(--border)' }}>{result.summary}</p>
+
+              {/* Walkthrough */}
+              {result.walkthrough && (
+                <div style={{ marginBottom:16 }}>
+                  <p className="slabel" style={{ marginBottom:6 }}>Walkthrough</p>
+                  <p style={{ fontSize:12, color:'var(--text-muted)', lineHeight:1.7, margin:0 }}>{result.walkthrough}</p>
+                </div>
+              )}
+
+              {/* Issue lists */}
+              <IssueList items={result.mustFix}   label="Must Fix"   variant="critical" />
+              <IssueList items={result.security}  label="Security"   variant="high" />
+              <IssueList items={result.shouldFix} label="Should Fix" variant="medium" />
+              <IssueList items={result.minor}     label="Minor"      variant="info" />
+
+              {/* Checklist */}
+              {result.checklist && (
+                <div style={{ marginBottom:16 }}>
+                  <p className="slabel" style={{ marginBottom:8 }}>Checklist</p>
+                  <ChecklistRow label="Tests included"     val={result.checklist.hasTests} />
+                  <ChecklistRow label="Migration included" val={result.checklist.hasMigration} />
+                  <ChecklistRow label="Breaking change"    val={result.checklist.breakingChange} />
+                  <ChecklistRow label="Docs updated"       val={result.checklist.docUpdated} />
+                  <ChecklistRow label="Naming consistent"  val={result.checklist.namingConsistent} />
+                </div>
+              )}
+
+              {/* Post comment preview + action */}
+              {result.postComment && (
+                <div style={{ marginTop:16, paddingTop:16, borderTop:'1px solid var(--border)' }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                    <p className="slabel">Post to PR as Comment</p>
+                    <Btn onClick={postReviewComment} disabled={postingReview} variant="green" size="xs">
+                      {postingReview ? <><Spin size={11} /> Posting...</> : 'Post Review Comment'}
+                    </Btn>
+                  </div>
+                  <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 14px', maxHeight:160, overflowY:'auto' }}>
+                    <MarkdownOutput text={result.postComment} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── Thread card ────────────────────────────────────────────────────────
 
 const AI_ACTIONS = [
-  { key: 'explain', label: '💡 Explain',     desc: 'What is the reviewer asking for?' },
-  { key: 'suggest', label: '🔧 Suggest fix', desc: 'Concrete code-level approach' },
-  { key: 'draft',   label: '✍️ Draft reply', desc: 'Professional reply draft' },
+  { key:'explain', label:'Explain' },
+  { key:'suggest', label:'Suggest Fix' },
+  { key:'draft',   label:'Draft Reply' },
+];
+const THREAD_STATUSES = [
+  { value:1, label:'Active' }, { value:2, label:'Fixed' }, { value:3, label:"Won't Fix" },
+  { value:4, label:'Closed' }, { value:5, label:'Pending' },
 ];
 
-function ThreadCard({ thread, creds, prTitle, onApply, onSelectFile, onUsage, model }) {
-  const [results,  setResults]  = useState({});
-  const [loading,  setLoading]  = useState({});
-  const [active,   setActive]   = useState(null);  // which AI action panel is open
-  const [expanded, setExpanded] = useState(true);
+function ThreadCard({ thread, creds, prTitle, onApply, onSelectFile, onUsage, model, parsed, diffContext }) {
+  const toast = useToast();
+  const [results,       setResults]       = useState({});
+  const [loading,       setLoading]       = useState({});
+  const [active,        setActive]        = useState(null);
+  const [expanded,      setExpanded]      = useState(true);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState(thread.status);
 
   const root    = thread.comments?.[0];
   const replies = thread.comments?.slice(1) || [];
-  const file    = thread.threadContext?.filePath?.replace(/^\//, '');
+  const file    = thread.threadContext?.filePath?.replace(/^\//,'');
+  const lineNum = thread.threadContext?.rightFileStart?.line;
 
   async function runAI(key) {
-    if (results[key]) { setActive(key); return; }   // already cached
+    if (results[key]) { setActive(key); return; }
     setActive(key);
     setLoading(p => ({ ...p, [key]: true }));
     try {
-      const allText = thread.comments
-        .map(c => `${c.author?.displayName || 'Unknown'}: ${c.content}`)
-        .join('\n');
-
-      let prompt = `You are helping review a pull request on Azure DevOps.\nPR title: "${prTitle}"`;
-      if (creds.context) prompt += `\nProject context: ${creds.context}`;
-      if (file)          prompt += `\nFile: ${file}`;
+      const allText = thread.comments.map(c=>`${c.author?.displayName||'Unknown'}: ${c.content}`).join('\n');
+      let prompt = `You are helping review a pull request.\nPR: "${prTitle}"`;
+      if (creds.context) prompt += `\nContext: ${creds.context}`;
+      if (file) prompt += `\nFile: ${file}${lineNum?` line ${lineNum}`:''}`;
+      if (diffContext) prompt += `\n\nCode context:\n\`\`\`\n${diffContext.slice(0,1200)}\n\`\`\``;
       prompt += `\n\nComment thread:\n${allText}\n\n`;
-
-      if (key === 'explain') prompt += 'Explain clearly and concisely what the reviewer is asking for or concerned about.';
-      else if (key === 'suggest') prompt += 'Provide a concrete, specific code-level suggestion to address this comment. Include code snippets where helpful.';
-      else prompt += "Draft a professional, concise reply from the PR author's perspective. Keep it natural — not overly formal.";
-
+      if (key==='explain') prompt += 'Explain what the reviewer is asking for. Use markdown for clarity.';
+      else if (key==='suggest') prompt += 'Provide a concrete code-level fix with code snippets. Use markdown.';
+      else prompt += "Draft a professional reply from the PR author. Natural tone. Use markdown if helpful.";
       const { text, inputTokens, outputTokens } = await claude(creds.anthropicKey, prompt, model);
       setResults(p => ({ ...p, [key]: text }));
       onUsage?.(inputTokens, outputTokens);
     } catch(e) {
-      setResults(p => ({ ...p, [key]: `Error: ${e.message}` }));
-    } finally {
-      setLoading(p => ({ ...p, [key]: false }));
-    }
+      setResults(p => ({ ...p, [key]: `**Error:** ${e.message}` }));
+    } finally { setLoading(p => ({ ...p, [key]: false })); }
   }
 
   function toggle(key) {
@@ -730,49 +1599,65 @@ function ThreadCard({ thread, creds, prTitle, onApply, onSelectFile, onUsage, mo
     else runAI(key);
   }
 
+  async function updateStatus(newVal) {
+    setStatusLoading(true);
+    try {
+      const base = apiBase(parsed);
+      await adoPatch(
+        `${base}/repositories/${encodeURIComponent(parsed.repo)}/pullrequests/${parsed.prId}/threads/${thread.id}?api-version=7.1`,
+        creds.pat, { status: newVal }
+      );
+      const label = THREAD_STATUSES.find(s=>s.value===newVal)?.label || String(newVal);
+      setCurrentStatus(label.toLowerCase().replace(/\s/g,''));
+      toast(`Thread marked as ${label}`, 'success');
+    } catch(e) { toast(e.message, 'error'); }
+    finally { setStatusLoading(false); }
+  }
+
   const result    = active ? results[active] : null;
   const isLoading = active ? loading[active] : false;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden thread-card">
-      {/* Header row */}
-      <div className="px-4 py-3 bg-gray-50 border-b flex items-start gap-3">
-        <Avatar name={root?.author?.displayName} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-gray-800">{root?.author?.displayName || 'Unknown'}</span>
-            <Badge status={thread.status} />
+    <div className="panel thread-card" style={{ overflow:'hidden' }}>
+      {/* Header */}
+      <div style={{ padding:'10px 14px', background:'var(--surface)', display:'flex', alignItems:'flex-start', gap:10 }}>
+        <Avatar name={root?.author?.displayName} size={26} />
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:2 }}>
+            <span style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{root?.author?.displayName||'Unknown'}</span>
+            <span className={`chip ${STATUS_CHIP[currentStatus]||'chip-active'}`}>{currentStatus||'active'}</span>
             {file && (
-              <button onClick={() => onSelectFile(file)} title={file}
-                className="text-xs font-mono bg-blue-50 text-blue-600 px-2 py-0.5 rounded hover:bg-blue-100 transition max-w-[180px] truncate">
-                {file.split('/').pop()}
+              <button onClick={()=>onSelectFile(file)} title={file}
+                style={{ fontFamily:'JetBrains Mono', fontSize:10, background:'rgba(88,166,255,0.1)', color:'var(--accent)', border:'1px solid rgba(88,166,255,0.2)', borderRadius:6, padding:'2px 8px', cursor:'pointer', maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                {file.split('/').pop()}{lineNum?`:${lineNum}`:''}
               </button>
             )}
           </div>
-          <span className="text-xs text-gray-400">{relTime(root?.publishedDate)}</span>
+          <span style={{ fontSize:11, color:'var(--text-dim)' }}>{relTime(root?.publishedDate)}</span>
         </div>
-        <button onClick={() => setExpanded(e => !e)} className="text-gray-400 hover:text-gray-600 text-xs mt-0.5">
+        <button onClick={()=>setExpanded(e=>!e)}
+          style={{ background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:11, padding:'2px 4px', borderRadius:4, flexShrink:0 }}>
           {expanded ? '▲' : '▼'}
         </button>
       </div>
 
       {expanded && (
-        <div className="px-4 py-3 space-y-3">
-          {/* Root comment text */}
-          <p className="text-sm text-gray-800 whitespace-pre-wrap">{root?.content}</p>
+        <div style={{ padding:'12px 14px' }}>
+          {/* Comment text */}
+          <div style={{ fontSize:13, color:'var(--text)', lineHeight:1.65, whiteSpace:'pre-wrap', marginBottom:10 }}>{root?.content}</div>
 
           {/* Replies */}
           {replies.length > 0 && (
-            <div className="pl-4 border-l-2 border-gray-200 space-y-2.5">
+            <div style={{ borderLeft:'2px solid var(--border)', paddingLeft:12, marginBottom:12 }}>
               {replies.map(c => (
-                <div key={c.id} className="flex gap-2">
-                  <Avatar name={c.author?.displayName} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs font-semibold text-gray-700">{c.author?.displayName}</span>
-                      <span className="text-xs text-gray-400">{relTime(c.publishedDate)}</span>
+                <div key={c.id} style={{ display:'flex', gap:8, marginBottom:10 }}>
+                  <Avatar name={c.author?.displayName} size={22} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:2 }}>
+                      <span style={{ fontSize:12, fontWeight:600, color:'var(--text-muted)' }}>{c.author?.displayName}</span>
+                      <span style={{ fontSize:10, color:'var(--text-dim)' }}>{relTime(c.publishedDate)}</span>
                     </div>
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap mt-0.5">{c.content}</p>
+                    <div style={{ fontSize:12, color:'var(--text-muted)', lineHeight:1.6, whiteSpace:'pre-wrap' }}>{c.content}</div>
                   </div>
                 </div>
               ))}
@@ -780,108 +1665,148 @@ function ThreadCard({ thread, creds, prTitle, onApply, onSelectFile, onUsage, mo
           )}
 
           {/* AI action buttons */}
-          <div className="flex flex-wrap gap-2 pt-1">
-            {AI_ACTIONS.map(({ key, label, desc }) => (
-              <button key={key} title={desc} onClick={() => toggle(key)}
-                disabled={loading[key]}
-                className={`text-xs px-3 py-1.5 rounded border font-medium transition
-                  ${active === key && (results[key] || loading[key])
-                    ? 'bg-sky-100 border-sky-300 text-sky-700'
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'}
-                  disabled:opacity-50 disabled:cursor-not-allowed`}>
-                {loading[key] ? <Spin /> : label}
-              </button>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:10 }}>
+            {AI_ACTIONS.map(({ key, label }) => (
+              <Btn key={key} onClick={()=>toggle(key)} disabled={loading[key]} variant="secondary" size="xs"
+                style={ active===key&&(results[key]||loading[key]) ? { borderColor:'var(--accent)', color:'var(--accent)', background:'rgba(88,166,255,0.1)' } : {}}>
+                {loading[key] ? <><Spin size={10} /> {label}</> : label}
+              </Btn>
             ))}
-            {/* Quick "Reply" shortcut to jump to composer */}
-            <button onClick={() => onApply(thread.id, '')}
-              className="text-xs px-3 py-1.5 rounded border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition ml-auto">
-              ↩ Reply
-            </button>
+            <div style={{ flex:1 }} />
+            <Btn onClick={()=>onApply(thread.id,'')} variant="ghost" size="xs">Reply</Btn>
           </div>
 
-          {/* AI result panel */}
+          {/* AI result */}
           {(result || isLoading) && (
-            <div className="ai-box">
-              {isLoading && !result
-                ? <p className="text-sm text-sky-600 animate-pulse">Claude is thinking…</p>
-                : <p className="text-sm text-gray-800 whitespace-pre-wrap">{result}</p>
-              }
-              {result && (
-                <div className="flex gap-2 mt-2">
-                  <button onClick={() => onApply(thread.id, result)}
-                    className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 font-medium transition">
-                    Apply to composer
-                  </button>
-                  <button onClick={() => { setActive(null); setResults({}); }}
-                    className="text-xs px-3 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition">
-                    Clear
-                  </button>
+            <div style={{ background:'rgba(88,166,255,0.05)', border:'1px solid rgba(88,166,255,0.15)', borderRadius:8, padding:'12px 14px', marginBottom:10 }} className="fade-up">
+              {isLoading && !result ? (
+                <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>
+                  <LoadingDots />
+                  <span style={{ fontSize:12, color:'var(--text-muted)' }}>Claude is thinking...</span>
                 </div>
+              ) : (
+                <>
+                  <MarkdownOutput text={result} />
+                  <div style={{ display:'flex', gap:8, marginTop:10 }}>
+                    <Btn onClick={()=>onApply(thread.id, result)} size="xs" variant="primary">Apply to Composer</Btn>
+                    <Btn onClick={()=>{ setActive(null); setResults({}); }} size="xs" variant="ghost">Dismiss</Btn>
+                  </div>
+                </>
               )}
             </div>
           )}
+
+          {/* Status management */}
+          <div style={{ borderTop:'1px solid var(--border-sub)', paddingTop:10, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+            <span style={{ fontSize:10, color:'var(--text-dim)', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.08em', marginRight:2 }}>Status:</span>
+            {THREAD_STATUSES.map(s => (
+              <Btn key={s.value} onClick={()=>updateStatus(s.value)} disabled={statusLoading} variant="ghost" size="xs"
+                style={{ border:'1px solid var(--border)', fontSize:11 }}>
+                {s.label}
+              </Btn>
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ── Summarize all ──────────────────────────────────────────────────────
+// ── Summarize panel ────────────────────────────────────────────────────
 
-function SummarizePanel({ creds, threads, prTitle, onUsage, model }) {
+function SummarizePanel({ creds, threads, prTitle, onUsage, model, conventions = [] }) {
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [result,  setResult]  = useState('');
-  const [err,     setErr]     = useState('');
 
   async function run() {
-    setLoading(true); setErr(''); setResult('');
+    setLoading(true); setResult('');
     try {
-      const active = threads.filter(
-        t => !t.isDeleted && t.comments?.length && ['active','pending'].includes(t.status)
-      );
-      if (!active.length) { setResult('No active threads to summarize.'); return; }
-
-      const body = active.map((t, i) => {
-        const f = t.threadContext?.filePath || '';
-        const lines = t.comments.map(c => `  ${c.author?.displayName || '?'}: ${c.content}`).join('\n');
-        return `Thread ${i + 1}${f ? ` (${f})` : ''}:\n${lines}`;
+      const active = threads.filter(t=>!t.isDeleted&&t.comments?.length&&['active','pending'].includes(t.status));
+      if (!active.length) { setResult('No active threads to summarize.'); setLoading(false); return; }
+      const body = active.map((t,i) => {
+        const f = t.threadContext?.filePath||'';
+        const lines = t.comments.map(c=>`  ${c.author?.displayName||'?'}: ${c.content}`).join('\n');
+        return `Thread ${i+1}${f?` (${f})`:''}:\n${lines}`;
       }).join('\n\n');
-
-      const prompt = `You are reviewing a pull request.\nPR: "${prTitle}"${creds.context ? `\nContext: ${creds.context}` : ''}\n\nActive comment threads:\n\n${body}\n\nProvide a prioritized summary grouped by urgency: must-fix → should-fix → minor. Be concise and actionable.`;
+      let prompt = `PR: "${prTitle}"${creds.context?`\nContext: ${creds.context}`:''}`;
+      if (conventions.length) prompt += `\nTeam conventions: ${conventions.join('; ')}`;
+      prompt += `\n\nActive threads:\n\n${body}\n\nSummarize with markdown grouped by urgency: must-fix, should-fix, minor. Call out any convention violations explicitly. Be concise and actionable.`;
       const { text, inputTokens, outputTokens } = await claude(creds.anthropicKey, prompt, model);
-      setResult(text);
-      onUsage?.(inputTokens, outputTokens);
-    } catch(e) {
-      setErr(e.message);
-    } finally {
-      setLoading(false);
-    }
+      setResult(text); onUsage?.(inputTokens, outputTokens);
+    } catch(e) { toast(e.message, 'error'); }
+    finally { setLoading(false); }
   }
 
   return (
-    <section>
-      <button onClick={run} disabled={loading}
-        className="w-full text-sm py-2 px-3 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2 transition">
-        {loading ? <><Spin /> Summarizing…</> : '✦ Summarize all comments'}
-      </button>
-      {err && <div className="mt-2"><Alert msg={err} /></div>}
-      {result && <div className="mt-3 ai-box text-sm text-gray-800 whitespace-pre-wrap">{result}</div>}
-    </section>
+    <div>
+      <Btn onClick={run} disabled={loading} variant="secondary" size="xs" style={{ width:'100%', justifyContent:'center' }}>
+        {loading ? <><Spin size={11} /> Summarizing...</> : 'Summarize All Threads'}
+      </Btn>
+      {result && (
+        <div style={{ marginTop:10, background:'rgba(88,166,255,0.04)', border:'1px solid rgba(88,166,255,0.12)', borderRadius:8, padding:'10px 12px' }} className="fade-up">
+          <MarkdownOutput text={result} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Vote panel ─────────────────────────────────────────────────────────
+
+function VotePanel({ creds, pr, parsed, onVoted }) {
+  const toast   = useToast();
+  const [loading, setLoading] = useState(false);
+
+  async function castVote(vote) {
+    setLoading(true);
+    try {
+      const base    = apiBase(parsed);
+      const repoEnc = encodeURIComponent(parsed.repo);
+      const connData = await adoGet('https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1', creds.pat);
+      const userId = connData.id;
+      if (!userId) throw new Error('Could not resolve user ID. Ensure PAT has Profile (Read) scope.');
+      await adoPut(
+        `${base}/repositories/${repoEnc}/pullrequests/${parsed.prId}/reviewers/${userId}?api-version=7.1`,
+        creds.pat, { id: userId, vote, isRequired: false }
+      );
+      const label = vote===10?'Approved':vote===-10?'Rejected':vote===5?'Approved with suggestions':'Vote cleared';
+      toast(label, vote>=0?'success':'warn');
+      onVoted?.();
+    } catch(e) { toast(e.message, 'error'); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div>
+      <p className="slabel" style={{ marginBottom:8 }}>Cast Vote</p>
+      <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+        <button onClick={()=>castVote(10)}  disabled={loading} className="vote-btn vote-approve">Approve</button>
+        <button onClick={()=>castVote(5)}   disabled={loading} className="vote-btn vote-suggest">Approve with Suggestions</button>
+        <button onClick={()=>castVote(-10)} disabled={loading} className="vote-btn vote-reject">Reject</button>
+        <button onClick={()=>castVote(0)}   disabled={loading} className="vote-btn vote-clear">Clear Vote</button>
+      </div>
+      {loading && <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:6, fontSize:11, color:'var(--text-dim)' }}><Spin size={11} /> Submitting...</div>}
+    </div>
   );
 }
 
 // ── Composer ───────────────────────────────────────────────────────────
 
 function Composer({ creds, parsed, threads, onPosted, fillRef }) {
+  const toast = useToast();
   const [mode,     setMode]     = useState('new');
   const [threadId, setThreadId] = useState('');
   const [text,     setText]     = useState('');
   const [confirm,  setConfirm]  = useState(false);
   const [posting,  setPosting]  = useState(false);
-  const [err,      setErr]      = useState('');
-  const [success,  setSuccess]  = useState('');
 
-  // Let parent pre-fill via fillRef
+  useEffect(() => {
+    function onKey(e) { if (e.key==='Escape') setConfirm(false); }
+    if (confirm) document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [confirm]);
+
   useEffect(() => {
     fillRef.current = (tid, txt) => {
       if (tid) { setMode('reply'); setThreadId(String(tid)); }
@@ -892,102 +1817,83 @@ function Composer({ creds, parsed, threads, onPosted, fillRef }) {
   const { repo, prId } = parsed;
   const base    = apiBase(parsed);
   const repoEnc = encodeURIComponent(repo);
-  const replyable = threads.filter(t => !t.isDeleted && t.comments?.length);
+  const replyable = threads.filter(t=>!t.isDeleted&&t.comments?.length);
+  const canPost = text.trim().length > 0 && (mode==='new'||threadId);
 
   async function post() {
-    setPosting(true); setErr('');
+    setPosting(true);
     try {
-      if (mode === 'reply' && threadId) {
-        await adoPost(
-          `${base}/repositories/${repoEnc}/pullrequests/${prId}/threads/${threadId}/comments?api-version=7.1`,
-          creds.pat,
-          { content: text, commentType: 1 }
-        );
+      if (mode==='reply'&&threadId) {
+        await adoPost(`${base}/repositories/${repoEnc}/pullrequests/${prId}/threads/${threadId}/comments?api-version=7.1`, creds.pat, { content:text, commentType:1 });
       } else {
-        await adoPost(
-          `${base}/repositories/${repoEnc}/pullrequests/${prId}/threads?api-version=7.1`,
-          creds.pat,
-          { comments: [{ content: text, commentType: 1 }], status: 1 }
-        );
+        await adoPost(`${base}/repositories/${repoEnc}/pullrequests/${prId}/threads?api-version=7.1`, creds.pat, { comments:[{content:text,commentType:1}], status:1 });
       }
-      setSuccess('Comment posted!');
-      setText(''); setConfirm(false);
-      onPosted();
-    } catch(e) {
-      setErr(e.message); setConfirm(false);
-    } finally {
-      setPosting(false);
-    }
+      toast('Comment posted', 'success');
+      setText(''); setConfirm(false); onPosted();
+    } catch(e) { toast(e.message, 'error'); setConfirm(false); }
+    finally { setPosting(false); }
   }
 
-  const canPost = text.trim().length > 0 && (mode === 'new' || threadId);
-
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">Post Comment</h3>
-      {success && <Alert msg={success} type="success" onClose={() => setSuccess('')} />}
-      {err     && <Alert msg={err}     onClose={() => setErr('')} />}
+    <div className="panel" style={{ overflow:'hidden' }}>
+      <div className="panel-header" style={{ padding:'10px 14px' }}>
+        <span style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>Post Comment</span>
+      </div>
+      <div style={{ padding:14 }}>
+        {/* Mode selector */}
+        <div style={{ display:'flex', gap:16, marginBottom:12 }}>
+          {[{v:'new',l:'New thread'},{v:'reply',l:'Reply to thread'}].map(({v,l}) => (
+            <label key={v} style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, color: mode===v?'var(--text)':'var(--text-muted)', cursor:'pointer' }}>
+              <input type="radio" name="cmode" value={v} checked={mode===v} onChange={()=>setMode(v)}
+                style={{ accentColor:'var(--accent)' }} />
+              {l}
+            </label>
+          ))}
+        </div>
 
-      {/* Mode selector */}
-      <div className="flex gap-4 mb-3">
-        {[{ v: 'new', l: 'New comment' }, { v: 'reply', l: 'Reply to thread' }].map(({ v, l }) => (
-          <label key={v} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
-            <input type="radio" name="cmode" value={v} checked={mode === v} onChange={() => setMode(v)} />
-            {l}
-          </label>
-        ))}
+        {/* Thread select */}
+        {mode==='reply' && (
+          <select value={threadId} onChange={e=>setThreadId(e.target.value)}
+            style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 10px', fontSize:12, color:'var(--text)', marginBottom:10, outline:'none', fontFamily:'Geist, sans-serif' }}>
+            <option value="">Select a thread...</option>
+            {replyable.map(t => {
+              const preview = (t.comments[0]?.content||'').slice(0,60);
+              const f = t.threadContext?.filePath?.split('/').pop()||'';
+              return <option key={t.id} value={t.id}>#{t.id}{f?` [${f}]`:''}: {preview}</option>;
+            })}
+          </select>
+        )}
+
+        <textarea value={text} onChange={e=>setText(e.target.value)} rows={4}
+          className="inp" style={{ resize:'vertical', fontSize:12, lineHeight:1.6 }}
+          placeholder="Write your comment... (AI Draft Reply pre-fills this)" />
+
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:10 }}>
+          <span style={{ fontSize:11, color:'var(--text-dim)' }}>{text.length} chars</span>
+          <Btn onClick={()=>canPost&&setConfirm(true)} disabled={!canPost} variant="primary" size="sm">Post</Btn>
+        </div>
       </div>
 
-      {/* Thread dropdown (reply mode only) */}
-      {mode === 'reply' && (
-        <select value={threadId} onChange={e => setThreadId(e.target.value)}
-          className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">— Select thread —</option>
-          {replyable.map(t => {
-            const preview = (t.comments[0]?.content || '').slice(0, 60);
-            const f = t.threadContext?.filePath?.split('/').pop() || '';
-            return (
-              <option key={t.id} value={t.id}>
-                #{t.id}{f ? ` [${f}]` : ''}: {preview}
-              </option>
-            );
-          })}
-        </select>
-      )}
-
-      <textarea value={text} onChange={e => setText(e.target.value)} rows={4}
-        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-        placeholder="Write your comment… (AI suggestions can pre-fill this via 'Apply to composer')" />
-      <div className="flex items-center justify-between mt-2">
-        <span className="text-xs text-gray-400">{text.length} chars</span>
-        <button onClick={() => canPost && setConfirm(true)} disabled={!canPost}
-          className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition">
-          Post
-        </button>
-      </div>
-
-      {/* Confirmation modal */}
       {confirm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-            <h3 className="font-semibold text-gray-900 mb-1">Confirm Post</h3>
-            <p className="text-xs text-gray-500 mb-3">
-              {mode === 'reply'
-                ? `Replying to thread #${threadId} on PR #${prId}`
-                : `New comment thread on PR #${prId}`}
-            </p>
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto mb-5">
-              {text}
+        <div className="modal-bg" style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:16 }}>
+          <div className="panel fade-up" style={{ width:'100%', maxWidth:440 }}>
+            <div style={{ padding:'16px 20px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <h3 style={{ fontSize:14, fontWeight:600, color:'var(--text)', margin:0 }}>Confirm Post</h3>
+              <kbd>Esc</kbd>
             </div>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setConfirm(false)}
-                className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition">
-                Cancel
-              </button>
-              <button onClick={post} disabled={posting}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition flex items-center gap-2">
-                {posting ? <><Spin /> Posting…</> : 'Confirm & Post'}
-              </button>
+            <div style={{ padding:20 }}>
+              <p style={{ fontSize:12, color:'var(--text-muted)', marginBottom:12 }}>
+                {mode==='reply'?`Replying to thread #${threadId} on PR #${prId}`:`New comment on PR #${prId}`}
+              </p>
+              <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px', fontSize:12, color:'var(--text)', maxHeight:160, overflowY:'auto', whiteSpace:'pre-wrap', lineHeight:1.6, fontFamily:'JetBrains Mono', marginBottom:16 }}>
+                {text}
+              </div>
+              <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+                <Btn onClick={()=>setConfirm(false)} variant="secondary" size="sm">Cancel</Btn>
+                <Btn onClick={post} disabled={posting} variant="primary" size="sm">
+                  {posting ? <><Spin size={12} /> Posting...</> : 'Confirm and Post'}
+                </Btn>
+              </div>
             </div>
           </div>
         </div>
@@ -996,195 +1902,419 @@ function Composer({ creds, parsed, threads, onPosted, fillRef }) {
   );
 }
 
-// ── Full review view ───────────────────────────────────────────────────
+// ── Iteration banner ───────────────────────────────────────────────────
+
+function IterationBanner({ pr, latestIteration, creds, parsed, onRefresh }) {
+  const [newIter, setNewIter] = useState(false);
+
+  useEffect(() => {
+    if (!pr || !latestIteration) return;
+    const base    = apiBase(parsed);
+    const repoEnc = encodeURIComponent(parsed.repo);
+    adoGet(`${base}/repositories/${repoEnc}/pullrequests/${parsed.prId}/iterations?api-version=7.1`, creds.pat)
+      .then(resp => {
+        const latest = resp.value?.[resp.value.length-1];
+        if (latest && latest.id !== latestIteration.id) setNewIter(true);
+      }).catch(()=>{});
+  }, []);
+
+  if (!newIter) return null;
+  return (
+    <div style={{ background:'rgba(210,153,34,0.08)', border:'1px solid rgba(210,153,34,0.25)', borderRadius:8, padding:'10px 14px', display:'flex', alignItems:'center', gap:10 }} className="fade-up">
+      <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:'rgba(210,153,34,0.15)', color:'var(--amber)', border:'1px solid rgba(210,153,34,0.3)', flexShrink:0 }}>NEW PUSH</span>
+      <span style={{ fontSize:12, color:'var(--amber)', flex:1 }}>New commits pushed since you loaded this PR. Refresh to see latest diff and threads.</span>
+      <Btn onClick={onRefresh} variant="amber" size="xs">Refresh</Btn>
+    </div>
+  );
+}
+
+// ── PR Health Score ────────────────────────────────────────────────────
+// Computes a score 0-100 from PR metadata. Shown as a ring in the header.
+
+function computePRScore(pr, threads, changedFiles) {
+  let score = 100;
+  // Penalise for open threads
+  const open = threads.filter(t=>['active','pending'].includes(t.status)).length;
+  score -= Math.min(open * 8, 40);
+  // Penalise for large PRs
+  if (changedFiles.length > 20) score -= 20;
+  else if (changedFiles.length > 10) score -= 10;
+  // Penalise for no description
+  if (!pr.description?.trim()) score -= 10;
+  // Penalise for rejections
+  const rejected = (pr.reviewers||[]).filter(r=>r.vote<0).length;
+  score -= rejected * 12;
+  return Math.max(0, Math.min(100, score));
+}
+
+function PRScoreRing({ score }) {
+  const r = 14, circ = 2 * Math.PI * r;
+  const fill = (score / 100) * circ;
+  const color = score >= 75 ? 'var(--green)' : score >= 50 ? 'var(--amber)' : 'var(--red)';
+  return (
+    <div title={`PR Health: ${score}/100`} style={{ position:'relative', width:36, height:36, cursor:'default', flexShrink:0 }}>
+      <svg width="36" height="36" viewBox="0 0 36 36">
+        <circle cx="18" cy="18" r={r} fill="none" stroke="var(--border)" strokeWidth="3" />
+        <circle cx="18" cy="18" r={r} fill="none" stroke={color} strokeWidth="3"
+          strokeDasharray={`${fill} ${circ}`} strokeLinecap="round" className="score-ring" />
+      </svg>
+      <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:700, color, fontFamily:'JetBrains Mono' }}>{score}</span>
+    </div>
+  );
+}
+
+// ── Effort Estimator ───────────────────────────────────────────────────
+
+function estimateEffort(changedFiles, threads) {
+  const files = changedFiles.length;
+  const open  = threads.filter(t=>['active','pending'].includes(t.status)).length;
+  const score = files * 2 + open * 3;
+  if (score <= 10) return { label:'Low', cls:'effort-low',    mins: '5-15 min' };
+  if (score <= 30) return { label:'Medium', cls:'effort-medium', mins: '15-45 min' };
+  return                  { label:'High', cls:'effort-high',   mins: '45+ min' };
+}
+
+// ── Team Conventions Panel ─────────────────────────────────────────────
+// Lets the team define coding conventions that are injected into every AI prompt.
+// Stored in sessionStorage (cleared with tab) — no external dependency.
+
+function ConventionsPanel({ onConventionsChange }) {
+  const STORAGE_KEY = 'pr_review_conventions';
+  const [items, setItems] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+  });
+  const [input, setInput] = useState('');
+  const [open, setOpen] = useState(false);
+
+  function add() {
+    if (!input.trim()) return;
+    const next = [...items, input.trim()];
+    setItems(next);
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    onConventionsChange?.(next);
+    setInput('');
+  }
+  function remove(i) {
+    const next = items.filter((_,j)=>j!==i);
+    setItems(next);
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    onConventionsChange?.(next);
+  }
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+        <p className="slabel">Team Conventions</p>
+        <button onClick={()=>setOpen(o=>!o)} style={{ fontSize:10, color:'var(--accent)', background:'none', border:'none', cursor:'pointer' }}>
+          {open ? 'Hide' : 'Edit'}
+        </button>
+      </div>
+      {items.length > 0 && (
+        <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginBottom:open?8:0 }}>
+          {items.map((item,i) => (
+            <span key={i} className="convention-tag" style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
+              {item}
+              {open && <button onClick={()=>remove(i)} style={{ background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:10, padding:0, lineHeight:1 }}>x</button>}
+            </span>
+          ))}
+        </div>
+      )}
+      {open && (
+        <div style={{ display:'flex', gap:6, marginTop:4 }}>
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()}
+            className="inp" style={{ fontSize:11, padding:'5px 8px', flex:1 }}
+            placeholder="e.g. No print() in production code" />
+          <Btn onClick={add} variant="primary" size="xs">Add</Btn>
+        </div>
+      )}
+      {items.length === 0 && !open && (
+        <p style={{ fontSize:11, color:'var(--text-dim)' }}>No conventions defined. Click Edit to add team-specific rules that Claude will always check.</p>
+      )}
+    </div>
+  );
+}
+
+// ── Main Review View ───────────────────────────────────────────────────
 
 function ReviewView({ creds, data, onBack }) {
-  const { parsed, pr, changedFiles } = data;
-  const [threads, setThreads]        = useState(data.threads);
-  const [selFile, setSelFile]        = useState(null);
-  const [filter,  setFilter]         = useState('all');
-  const [spent,   setSpent]          = useState({ inTok: 0, outTok: 0 });
-  const [modelId, setModelId]        = useState(DEFAULT_MODEL);
-  const composerFill = useRef(null);
+  const toast = useToast();
+  const { parsed, pr, changedFiles, iterations, latestIteration } = data;
+  const [threads,    setThreads]    = useState(data.threads);
+  const [selFile,    setSelFile]    = useState(null);
+  const [filter,     setFilter]     = useState('all');
+  const [modelId,    setModelId]    = useState(DEFAULT_MODEL);
+  const [conventions, setConventions] = useState([]);
+  const composerFill     = useRef(null);
+  const diffContextCache = useRef({});
+  // Cost tracking: per-model accumulation, never reset on model switch
+  const [spentByModel, setSpentByModel] = useState({});
 
   function handleUsage(inTok, outTok) {
-    setSpent(p => ({ inTok: p.inTok + inTok, outTok: p.outTok + outTok }));
+    setSpentByModel(p => {
+      const prev = p[modelId] || { inTok:0, outTok:0 };
+      return { ...p, [modelId]: { inTok: prev.inTok+inTok, outTok: prev.outTok+outTok } };
+    });
   }
+  function handleModelChange(id) { setModelId(id); } // intentionally no reset
 
-  // Reset spend when model changes so the display stays honest
-  function handleModelChange(id) {
-    setModelId(id);
-    setSpent({ inTok: 0, outTok: 0 });
-  }
-
-  const srcBranch = (pr.sourceRefName || '').replace('refs/heads/', '');
-  const tgtBranch = (pr.targetRefName || '').replace('refs/heads/', '');
-  const approved  = (pr.reviewers || []).filter(r => r.vote > 0).length;
-  const rejected  = (pr.reviewers || []).filter(r => r.vote < 0).length;
-  const waiting   = (pr.reviewers || []).filter(r => r.vote === 0).length;
-  const activeCount = threads.filter(t => ['active','pending'].includes(t.status)).length;
-
-  const visible = threads.filter(t => {
-    if (!t.comments?.length) return false;
-    if (filter === 'active')   return ['active','pending'].includes(t.status);
-    if (filter === 'resolved') return ['fixed','resolved','closed','byDesign','wontFix'].includes(t.status);
-    return true;
-  });
+  const totalCost = Object.entries(spentByModel).reduce((sum, [mid, t]) => sum + calcCost(t.inTok, t.outTok, mid), 0);
+  const currentModelSpent = spentByModel[modelId] || { inTok:0, outTok:0 };
+  const currentModelCost  = calcCost(currentModelSpent.inTok, currentModelSpent.outTok, modelId);
+  function cacheDiffContext(path, text) { if (path&&text) diffContextCache.current[path]=text; }
+  function getDiffContext(path) { return diffContextCache.current[path]||''; }
 
   async function refreshThreads() {
     try {
-      const { repo, prId } = parsed;
       const base = apiBase(parsed);
-      const resp = await adoGet(
-        `${base}/repositories/${encodeURIComponent(repo)}/pullrequests/${prId}/threads?api-version=7.1`,
-        creds.pat
-      );
-      setThreads((resp.value || []).filter(t => !t.isDeleted));
-    } catch(e) { console.error('Thread refresh failed', e); }
+      const resp = await adoGet(`${base}/repositories/${encodeURIComponent(parsed.repo)}/pullrequests/${parsed.prId}/threads?api-version=7.1`, creds.pat);
+      setThreads((resp.value||[]).filter(t=>!t.isDeleted));
+      setLastRefreshed(new Date());
+    } catch(e) { toast('Thread refresh failed: ' + e.message, 'error'); }
+  }
+
+  // Auto-refresh every 2 minutes, countdown shown in threads header
+  const AUTO_REFRESH_SECS = 120;
+  const [lastRefreshed,  setLastRefreshed]  = useState(new Date());
+  const [countdown,      setCountdown]      = useState(AUTO_REFRESH_SECS);
+  const [refreshing,     setRefreshing]     = useState(false);
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          // trigger refresh
+          setRefreshing(true);
+          const base = apiBase(parsed);
+          adoGet(`${base}/repositories/${encodeURIComponent(parsed.repo)}/pullrequests/${parsed.prId}/threads?api-version=7.1`, creds.pat)
+            .then(resp => {
+              setThreads((resp.value||[]).filter(t=>!t.isDeleted));
+              setLastRefreshed(new Date());
+            })
+            .catch(()=>{})
+            .finally(()=>setRefreshing(false));
+          return AUTO_REFRESH_SECS;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, []);
+
+  async function manualRefresh() {
+    setRefreshing(true);
+    await refreshThreads().catch(()=>{});
+    setRefreshing(false);
+    setCountdown(AUTO_REFRESH_SECS);
   }
 
   function handleApply(threadId, text) {
     composerFill.current?.(threadId, text);
-    document.getElementById('composer')?.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('composer-anchor')?.scrollIntoView({ behavior:'smooth' });
+  }
+
+  const srcBranch  = (pr.sourceRefName||'').replace('refs/heads/','');
+  const tgtBranch  = (pr.targetRefName||'').replace('refs/heads/','');
+  const approved   = (pr.reviewers||[]).filter(r=>r.vote>0).length;
+  const rejected   = (pr.reviewers||[]).filter(r=>r.vote<0).length;
+  const waiting    = (pr.reviewers||[]).filter(r=>r.vote===0).length;
+  const activeCount = threads.filter(t=>['active','pending'].includes(t.status)).length;
+
+  const visible = threads.filter(t => {
+    if (!t.comments?.length) return false;
+    if (filter==='active')   return ['active','pending'].includes(t.status);
+    if (filter==='resolved') return ['fixed','resolved','closed','byDesign','wontFix'].includes(t.status);
+    return true;
+  });
+
+  // Resizable sidebar
+  const sidebarRef = useRef(null);
+  const dragging   = useRef(false);
+
+  function onResizeStart(e) {
+    dragging.current = true;
+    e.currentTarget.classList.add('dragging');
+    const handle = e.currentTarget;
+    function onMove(ev) {
+      if (!dragging.current) return;
+      const newW = ev.clientX - sidebarRef.current.getBoundingClientRect().left;
+      if (newW >= 180 && newW <= 420) sidebarRef.current.style.width = newW + 'px';
+    }
+    function onUp() { dragging.current = false; handle.classList.remove('dragging'); window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      {/* ── Header ── */}
-      <header className="bg-white border-b border-gray-200 px-5 py-3 flex items-center gap-4 sticky top-0 z-30 shadow-sm">
-        <button onClick={onBack} className="text-sm text-gray-400 hover:text-gray-700 transition shrink-0">← Back</button>
-        <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs shrink-0">PR</div>
-        <div className="flex-1 min-w-0">
-          <h1 className="font-semibold text-gray-900 truncate text-sm">
-            PR #{pr.pullRequestId}: {pr.title}
-          </h1>
-          <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-            <span className="font-mono">{srcBranch} → {tgtBranch}</span>
-            <span>by {pr.createdBy?.displayName}</span>
-            <span className={`px-2 py-0.5 rounded-full font-medium ${
-              pr.status === 'active'    ? 'bg-emerald-100 text-emerald-700'
-              : pr.status === 'completed' ? 'bg-blue-100 text-blue-700'
-              : 'bg-gray-100 text-gray-500'
-            }`}>{pr.status}</span>
+    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:'var(--bg)' }}>
+      {/* Header */}
+      <header style={{ background:'var(--surface)', borderBottom:'1px solid var(--border)', padding:'0 16px', display:'flex', alignItems:'center', gap:12, height:52, position:'sticky', top:0, zIndex:30, flexShrink:0 }}>
+        <button onClick={onBack} style={{ background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:11, fontWeight:500, padding:'4px 8px', borderRadius:6, display:'flex', alignItems:'center', gap:4, transition:'all 0.15s' }}
+          onMouseEnter={e=>{ e.currentTarget.style.background='var(--card)'; e.currentTarget.style.color='var(--text)'; }}
+          onMouseLeave={e=>{ e.currentTarget.style.background='none'; e.currentTarget.style.color='var(--text-dim)'; }}>
+          Back
+        </button>
+
+        <div style={{ width:1, height:20, background:'var(--border)' }} />
+
+        {/* PR Health Score ring */}
+        <PRScoreRing score={computePRScore(pr, threads, changedFiles)} />
+
+        <div style={{ width:26, height:26, borderRadius:8, background:'var(--accent)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0d1117" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>
+          </svg>
+        </div>
+
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+            <span style={{ fontSize:13, fontWeight:600, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:400 }}>
+              #{pr.pullRequestId}: {pr.title}
+            </span>
+            <span style={{ fontSize:11, fontFamily:'JetBrains Mono', color:'var(--text-dim)', flexShrink:0 }}>{srcBranch} &rarr; {tgtBranch}</span>
+            <span style={{ fontSize:11, color:'var(--text-dim)' }}>by {pr.createdBy?.displayName}</span>
+            <span style={{ fontSize:11, fontWeight:500, padding:'2px 8px', borderRadius:999, background: pr.status==='active'?'rgba(63,185,80,0.12)':'rgba(88,166,255,0.12)', color: pr.status==='active'?'var(--green)':'var(--accent)', border: `1px solid ${pr.status==='active'?'rgba(63,185,80,0.25)':'rgba(88,166,255,0.25)'}` }}>{pr.status}</span>
+            {/* Effort estimate */}
+            {(() => { const e=estimateEffort(changedFiles,threads); return <span className={`chip ${e.cls}`} title={`Estimated review effort: ${e.mins}`}>{e.label} effort</span>; })()}
           </div>
         </div>
-        <div className="flex items-center gap-3 text-xs shrink-0">
-          <span className="text-emerald-600 font-medium">✓ {approved}</span>
-          <span className="text-red-500 font-medium">✗ {rejected}</span>
-          <span className="text-gray-400">– {waiting}</span>
-          <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium">{activeCount} active</span>
-          {/* ── Model selector ── */}
-          <div className="border-l border-gray-200 pl-3">
-            <select
-              value={modelId}
-              onChange={e => handleModelChange(e.target.value)}
-              className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer">
-              {MODELS.map(m => (
-                <option key={m.id} value={m.id}>{m.label}</option>
-              ))}
+
+        <div style={{ display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
+          <div style={{ display:'flex', gap:10, fontSize:11 }}>
+            <span style={{ color:'var(--green)', fontWeight:600 }}>{approved} A</span>
+            <span style={{ color:'var(--red)',   fontWeight:600 }}>{rejected} R</span>
+            <span style={{ color:'var(--text-dim)' }}>{waiting} W</span>
+            <span style={{ background:'rgba(88,166,255,0.1)', color:'var(--accent)', padding:'2px 8px', borderRadius:999, fontWeight:500, border:'1px solid rgba(88,166,255,0.2)' }}>{activeCount} open</span>
+          </div>
+
+          {/* Model picker */}
+          <div style={{ borderLeft:'1px solid var(--border)', paddingLeft:14 }}>
+            <select value={modelId} onChange={e=>handleModelChange(e.target.value)}
+              style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:6, padding:'4px 8px', fontSize:11, color:'var(--text)', outline:'none', fontFamily:'Geist, sans-serif', cursor:'pointer' }}>
+              {MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
-            <div className="text-[10px] text-gray-400 mt-0.5 text-center">
-              ${modelPricing(modelId).inPrice}/${modelPricing(modelId).outPrice} /MTok
+            <div style={{ fontSize:9, color:'var(--text-dim)', textAlign:'center', marginTop:2 }}>
+              ${modelPricing(modelId).inPrice}/${modelPricing(modelId).outPrice}/MTok
             </div>
           </div>
-          {/* ── Cost display ── */}
-          <div className="border-l border-gray-200 pl-3 text-right">
-            <div className="text-gray-400 leading-tight">
-              Est.{' '}
-              <span className="font-mono text-gray-600 font-medium">
-                {fmtCost(estimateCost(threads, creds.context, modelId))}
-              </span>
+
+          {/* Cost — never resets on model switch */}
+          <div style={{ borderLeft:'1px solid var(--border)', paddingLeft:14 }}>
+            <div style={{ fontSize:10, color:'var(--text-dim)', lineHeight:1.6 }}>
+              <span>{modelPricing(modelId).label}: </span>
+              <span style={{ fontFamily:'JetBrains Mono', fontWeight:600, color: currentModelCost>0?'var(--amber)':'var(--text-dim)' }}>{fmtCost(currentModelCost)}</span>
             </div>
-            <div className="text-gray-400 leading-tight">
-              Spent{' '}
-              <span className={`font-mono font-semibold ${spent.inTok > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
-                {fmtCost(calcCost(spent.inTok, spent.outTok, modelId))}
-              </span>
-            </div>
+            {totalCost > currentModelCost && (
+              <div style={{ fontSize:10, color:'var(--text-dim)', lineHeight:1.6 }}>
+                <span>Session: </span>
+                <span style={{ fontFamily:'JetBrains Mono', fontWeight:600, color:'var(--purple)' }}>{fmtCost(totalCost)}</span>
+              </div>
+            )}
           </div>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 57px)' }}>
-        {/* ── Sidebar ── */}
-        <aside className="w-72 shrink-0 bg-white border-r border-gray-200 overflow-y-auto scrollbar-thin p-4 flex flex-col gap-5">
+      <div style={{ display:'flex', flex:1, overflow:'hidden', height:'calc(100vh - 52px)' }}>
+        {/* Sidebar */}
+        <aside ref={sidebarRef} id="sidebar" style={{ background:'var(--surface)', borderRight:'1px solid var(--border)', overflowY:'auto', padding:'16px 14px', display:'flex', flexDirection:'column', gap:20, flexShrink:0 }}>
+          {/* PR description */}
           {pr.description && (
-            <section>
-              <p className="section-label">Description</p>
-              <p className="text-xs text-gray-600 line-clamp-5">{pr.description}</p>
-            </section>
+            <div>
+              <p className="slabel" style={{ marginBottom:6 }}>Description</p>
+              <p style={{ fontSize:11, color:'var(--text-muted)', lineHeight:1.6, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:5, WebkitBoxOrient:'vertical' }}>{pr.description}</p>
+            </div>
           )}
 
+          {/* Reviewers */}
           {pr.reviewers?.length > 0 && (
-            <section>
-              <p className="section-label">Reviewers</p>
-              <div className="space-y-1.5">
-                {pr.reviewers.map(r => (
-                  <div key={r.id} className="flex items-center gap-2">
-                    <Avatar name={r.displayName} />
-                    <span className="text-xs text-gray-700 flex-1 truncate">{r.displayName}</span>
-                    <span className={`text-sm ${r.vote > 0 ? 'text-emerald-600' : r.vote < 0 ? 'text-red-500' : 'text-gray-300'}`}>
-                      {r.vote > 0 ? '✓' : r.vote < 0 ? '✗' : '–'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
+            <div>
+              <p className="slabel" style={{ marginBottom:8 }}>Reviewers</p>
+              {pr.reviewers.map(r => (
+                <div key={r.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                  <Avatar name={r.displayName} size={22} />
+                  <span style={{ fontSize:11, color:'var(--text-muted)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.displayName}</span>
+                  <span style={{ fontFamily:'JetBrains Mono', fontSize:10, fontWeight:700, color:r.vote>0?'var(--green)':r.vote<0?'var(--red)':'var(--text-dim)' }}>{r.vote>0?'A':r.vote<0?'R':'-'}</span>
+                </div>
+              ))}
+            </div>
           )}
 
           <FileTree files={changedFiles} selected={selFile} onSelect={setSelFile} />
-
-          <SummarizePanel creds={creds} threads={threads} prTitle={pr.title} onUsage={handleUsage} model={modelId} />
+          <ConventionsPanel onConventionsChange={setConventions} />
+          <VotePanel creds={creds} pr={pr} parsed={parsed} onVoted={refreshThreads} />
+          <SummarizePanel creds={creds} threads={threads} prTitle={pr.title} onUsage={handleUsage} model={modelId} conventions={conventions} />
         </aside>
 
-        {/* ── Main content ── */}
-        <main className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-5">
-          {/* Diff / file viewer */}
-          <DiffViewer creds={creds} parsed={parsed} pr={pr} filePath={selFile} />
+        {/* Resize handle */}
+        <div className="resize-handle" onMouseDown={onResizeStart} />
 
-          {/* Review threads */}
+        {/* Main content */}
+        <main style={{ flex:1, overflowY:'auto', padding:20, display:'flex', flexDirection:'column', gap:16 }}>
+          <IterationBanner pr={pr} latestIteration={latestIteration} creds={creds} parsed={parsed} onRefresh={refreshThreads} />
+
+          {/* Diff viewer + Full PR Review row */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:-4 }}>
+            <h2 style={{ fontSize:12, fontWeight:700, color:'var(--text-dim)', textTransform:'uppercase', letterSpacing:'0.08em', margin:0 }}>Diff Viewer</h2>
+            <FullPRReview creds={creds} pr={pr} changedFiles={changedFiles} threads={threads} onUsage={handleUsage} model={modelId} parsed={parsed} latestIteration={latestIteration} conventions={conventions} />
+          </div>
+
+          <DiffViewer creds={creds} parsed={parsed} pr={pr} filePath={selFile} latestIteration={latestIteration} onUsage={handleUsage} model={modelId} onDiffLoaded={cacheDiffContext} />
+
+          {/* Threads section */}
           <div>
-            <div className="flex items-center gap-3 mb-3">
-              <h2 className="text-sm font-semibold text-gray-700">Threads ({visible.length})</h2>
-              <div className="flex border border-gray-200 rounded overflow-hidden">
-                {[['all','All'],['active','Active'],['resolved','Resolved']].map(([v, l]) => (
-                  <button key={v} onClick={() => setFilter(v)}
-                    className={`px-3 py-1 text-xs font-medium transition
-                      ${filter === v ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+              <h2 style={{ fontSize:12, fontWeight:700, color:'var(--text-dim)', textTransform:'uppercase', letterSpacing:'0.08em', margin:0 }}>
+                Threads <span style={{ color:'var(--text-dim)', fontWeight:400 }}>({visible.length})</span>
+              </h2>
+              {/* Filter tabs */}
+              <div style={{ display:'flex', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:6, overflow:'hidden', marginLeft:4 }}>
+                {[['all','All'],['active','Active'],['resolved','Resolved']].map(([v,l]) => (
+                  <button key={v} onClick={()=>setFilter(v)}
+                    style={{ padding:'4px 12px', fontSize:11, fontWeight:500, border:'none', cursor:'pointer', transition:'all 0.15s',
+                      background: filter===v?'var(--accent)':'transparent',
+                      color: filter===v?'#0d1117':'var(--text-muted)' }}>
                     {l}
                   </button>
                 ))}
               </div>
+              {/* Manual refresh + auto-refresh countdown */}
+              <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:10, color:'var(--text-dim)', fontFamily:'JetBrains Mono', minWidth:52 }}
+                  title={`Last refreshed: ${lastRefreshed.toLocaleTimeString()}`}>
+                  {refreshing ? 'refreshing' : `${countdown}s`}
+                </span>
+                <button
+                  onClick={manualRefresh}
+                  disabled={refreshing}
+                  title="Refresh threads now"
+                  style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:500, background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text-muted)', cursor:'pointer', transition:'all 0.15s', opacity: refreshing ? 0.5 : 1 }}
+                  onMouseEnter={e=>{ e.currentTarget.style.background='var(--card)'; e.currentTarget.style.color='var(--text)'; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.background='var(--surface)'; e.currentTarget.style.color='var(--text-muted)'; }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>
+                    <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                  </svg>
+                  Refresh
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              {visible.length === 0
-                ? <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-sm text-gray-400">No threads match this filter.</div>
-                : visible.map(t => (
-                    <ThreadCard
-                      key={t.id}
-                      thread={t}
-                      creds={creds}
-                      prTitle={pr.title}
-                      onApply={handleApply}
-                      onSelectFile={setSelFile}
-                      onUsage={handleUsage}
-                      model={modelId}
-                    />
-                  ))
-              }
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {visible.length === 0 ? (
+                <div className="panel" style={{ padding:40, textAlign:'center' }}>
+                  <p style={{ fontSize:13, color:'var(--text-muted)', margin:0 }}>No threads match this filter</p>
+                </div>
+              ) : visible.map(t => (
+                <ThreadCard key={t.id} thread={t} creds={creds} prTitle={pr.title}
+                  onApply={handleApply} onSelectFile={setSelFile} onUsage={handleUsage}
+                  model={modelId} parsed={parsed}
+                  diffContext={getDiffContext(t.threadContext?.filePath?.replace(/^\//,'')||'')} />
+              ))}
             </div>
           </div>
 
           {/* Composer */}
-          <div id="composer">
-            <Composer
-              creds={creds}
-              parsed={parsed}
-              threads={threads}
-              onPosted={refreshThreads}
-              fillRef={composerFill}
-            />
+          <div id="composer-anchor">
+            <Composer creds={creds} parsed={parsed} threads={threads} onPosted={refreshThreads} fillRef={composerFill} />
           </div>
         </main>
       </div>
@@ -1192,47 +2322,54 @@ function ReviewView({ creds, data, onBack }) {
   );
 }
 
-// ── App root ───────────────────────────────────────────────────────────
+// ── File origin guard ──────────────────────────────────────────────────
 
 function FileOriginBanner() {
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
-      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md text-center">
-        <div className="text-4xl mb-4">🚫</div>
-        <h1 className="text-lg font-bold text-gray-900 mb-2">Cannot run from <code>file://</code></h1>
-        <p className="text-sm text-gray-600 mb-5">
-          Browsers block cross-origin requests from local files. You must serve this page via HTTP.
-        </p>
-        <div className="bg-gray-900 rounded-lg px-4 py-3 text-left mb-5">
-          <p className="text-xs text-gray-400 mb-1">Run this in your terminal:</p>
-          <code className="text-green-400 text-sm">python3 -m http.server 8080</code>
+    <div className="auth-bg" style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+      <div className="panel fade-up" style={{ width:'100%', maxWidth:400, textAlign:'center', overflow:'hidden' }}>
+        <div style={{ background:'rgba(248,81,73,0.08)', borderBottom:'1px solid var(--border)', padding:'24px 24px 20px' }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:'rgba(248,81,73,0.15)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 12px' }}>
+            <span style={{ fontSize:16, fontWeight:700, color:'var(--red)' }}>!</span>
+          </div>
+          <h1 style={{ fontSize:15, fontWeight:700, color:'var(--text)', margin:'0 0 6px' }}>Cannot run from file://</h1>
+          <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>Browsers block cross-origin requests from local files.</p>
         </div>
-        <p className="text-sm text-gray-500">
-          Then open{' '}
-          <a href="http://localhost:8080/pr_review_v3.html"
-            className="text-blue-600 underline hover:text-blue-800">
-            http://localhost:8080/pr_review_v3.html
-          </a>
-        </p>
+        <div style={{ padding:20 }}>
+          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 14px', marginBottom:16, textAlign:'left' }}>
+            <p style={{ fontSize:10, color:'var(--text-dim)', margin:'0 0 4px' }}>Run in your terminal:</p>
+            <code style={{ fontFamily:'JetBrains Mono', fontSize:12, color:'var(--green)' }}>python3 -m http.server 8080</code>
+          </div>
+          <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>
+            Then open{' '}
+            <a href="http://localhost:8080/pr_review_v6.html" style={{ color:'var(--accent)' }}>
+              http://localhost:8080/pr_review_v6.html
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   );
 }
 
+// ── App ────────────────────────────────────────────────────────────────
+
 function App() {
   const [creds,  setCreds]  = useState(null);
   const [prData, setPrData] = useState(null);
 
-  // Browsers block CORS requests from file:// origins — show clear error instead of cryptic failure
   if (location.protocol === 'file:') return <FileOriginBanner />;
-
   if (!creds)  return <CredentialsPanel onSave={setCreds} />;
-  if (!prData) return <PRFetchPanel creds={creds} onFetch={setPrData} onReset={() => setCreds(null)} />;
-  return <ReviewView creds={creds} data={prData} onBack={() => setPrData(null)} />;
+  if (!prData) return <PRFetchPanel creds={creds} onFetch={setPrData} onReset={()=>setCreds(null)} />;
+  return <ReviewView creds={creds} data={prData} onBack={()=>setPrData(null)} />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode><App /></React.StrictMode>
+  <React.StrictMode>
+    <ToastProvider>
+      <App />
+    </ToastProvider>
+  </React.StrictMode>
 );
 </script>
 </body>
