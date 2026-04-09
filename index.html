@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR Review Assistant</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  /* Diff table */
+  .code-table { font-family: 'Courier New', monospace; font-size: 12px; width: 100%; border-collapse: collapse; }
+  .code-table td { padding: 1px 6px; white-space: pre; vertical-align: top; }
+  .ln { color: #aaa; text-align: right; min-width: 38px; user-select: none; border-right: 1px solid #e5e7eb; padding-right: 8px; }
+  .diff-add { background: #e6ffec; }
+  .diff-del { background: #ffebe9; }
+  .diff-ctx { background: #fff; }
+  .hunk-row td { background: #dbeafe; color: #1d4ed8; font-style: italic; padding: 2px 8px; }
+  .sign-add { color: #16a34a; min-width: 14px; text-align: center; }
+  .sign-del { color: #dc2626; min-width: 14px; text-align: center; }
+  .sign-ctx { color: #d1d5db; min-width: 14px; text-align: center; }
+  /* AI result */
+  .ai-box { background: #f0f9ff; border-left: 3px solid #38bdf8; padding: 10px 12px; border-radius: 4px; }
+  /* Misc */
+  .scrollbar-thin { scrollbar-width: thin; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  .thread-card { transition: box-shadow 0.15s; }
+  .thread-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  /* Form input base */
+  .input {
+    width: 100%; border: 1px solid #d1d5db; border-radius: 6px;
+    padding: 8px 12px; font-size: 14px; outline: none; transition: box-shadow 0.15s;
+  }
+  .input:focus { box-shadow: 0 0 0 2px #3b82f6; border-color: #3b82f6; }
+  /* Section label */
+  .section-label {
+    font-size: 11px; font-weight: 600; color: #9ca3af;
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;
+  }
+</style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── ADO REST helpers ───────────────────────────────────────────────────
+
+function b64(pat) { return 'Basic ' + btoa(':' + pat); }
+
+function parsePrUrl(raw) {
+  const m = raw.trim().match(
+    /https?:\/\/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+)\/pullrequest\/(\d+)/i
+  );
+  if (!m) throw new Error(
+    'Invalid URL. Expected: https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}'
+  );
+  // decodeURIComponent so spaces/special chars in project names aren't double-encoded
+  // when we later call encodeURIComponent() in apiBase()
+  return {
+    org:     decodeURIComponent(m[1]),
+    project: decodeURIComponent(m[2]),
+    repo:    decodeURIComponent(m[3]),
+    prId:    parseInt(m[4]),
+  };
+}
+
+function apiBase({ org, project }) {
+  return `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_apis/git`;
+}
+
+async function adoGet(url, pat) {
+  const r = await fetch(url, { headers: { Authorization: b64(pat), Accept: 'application/json' } });
+  if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`ADO ${r.status}: ${t.slice(0,200)}`); }
+  return r.json();
+}
+
+async function adoPost(url, pat, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: b64(pat), 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`ADO ${r.status}: ${t.slice(0,200)}`); }
+  return r.json();
+}
+
+// ── Anthropic helper ───────────────────────────────────────────────────
+
+// Returns { text, inputTokens, outputTokens } so callers can track actual spend
+async function claude(apiKey, prompt, modelId = 'claude-sonnet-4-6') {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: modelId,
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+  if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`Anthropic ${r.status}: ${t.slice(0,300)}`); }
+  const d = await r.json();
+  return {
+    text:         d.content[0].text,
+    inputTokens:  d.usage?.input_tokens  || 0,
+    outputTokens: d.usage?.output_tokens || 0,
+  };
+}
+
+// ── Models & pricing ──────────────────────────────────────────────────
+const MODELS = [
+  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5',   inPrice: 0.80,  outPrice: 4.00  },
+  { id: 'claude-sonnet-4-5-20251019',label: 'Sonnet 4.5',  inPrice: 3.00,  outPrice: 15.00 },
+  { id: 'claude-sonnet-4-6',         label: 'Sonnet 4.6',  inPrice: 3.00,  outPrice: 15.00 },
+  { id: 'claude-opus-4-6',           label: 'Opus 4.6',    inPrice: 15.00, outPrice: 75.00 },
+];
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
+
+function modelPricing(modelId) {
+  return MODELS.find(m => m.id === modelId) || MODELS[2];
+}
+
+function calcCost(inTok, outTok, modelId) {
+  const p = modelPricing(modelId);
+  return (inTok / 1e6) * p.inPrice + (outTok / 1e6) * p.outPrice;
+}
+
+function fmtCost(usd) {
+  if (usd === 0)     return '$0.0000';
+  if (usd < 0.0001)  return '<$0.0001';
+  return '$' + usd.toFixed(4);
+}
+
+// Estimate total cost if user runs every AI action on every active thread
+function estimateCost(threads, context, modelId) {
+  const active = threads.filter(
+    t => !t.isDeleted && t.comments?.length && ['active','pending'].includes(t.status)
+  );
+  let inTok = 0, outTok = 0;
+  const ctxLen = (context || '').length;
+
+  for (const t of active) {
+    const threadChars = t.comments.reduce((s, c) => s + (c.content || '').length, 0);
+    const promptTokens = Math.ceil((250 + ctxLen + threadChars) / 4);
+    inTok  += promptTokens * 3;   // 3 actions per thread
+    outTok += 400 * 3;
+  }
+  const allChars = active.reduce(
+    (s, t) => s + t.comments.reduce((cs, c) => cs + (c.content || '').length, 0), 0
+  );
+  inTok  += Math.ceil((300 + ctxLen + allChars) / 4);
+  outTok += 600;
+
+  return calcCost(inTok, outTok, modelId);
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────
+
+function relTime(iso) {
+  if (!iso) return '';
+  const m = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function initials(name) {
+  return (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+const AV_COLORS = ['bg-blue-500','bg-emerald-500','bg-violet-500','bg-amber-500','bg-rose-500','bg-cyan-500'];
+function avColor(name) { return AV_COLORS[(name || '').charCodeAt(0) % AV_COLORS.length]; }
+
+const STATUS_CLS = {
+  active:   'bg-blue-100 text-blue-700',
+  pending:  'bg-yellow-100 text-yellow-700',
+  fixed:    'bg-green-100 text-green-700',
+  resolved: 'bg-gray-100 text-gray-500',
+  closed:   'bg-gray-100 text-gray-400',
+  byDesign: 'bg-purple-100 text-purple-700',
+  wontFix:  'bg-red-100 text-red-600',
+};
+
+// ADO change type bitmask → [label, css]
+function changeLabel(ct) {
+  if (!ct) return ['EDIT', 'bg-yellow-100 text-yellow-700'];
+  if (ct & 4) return ['DEL',  'bg-red-100 text-red-700'];
+  if (ct & 1) return ['ADD',  'bg-green-100 text-green-700'];
+  if (ct & 8) return ['REN',  'bg-purple-100 text-purple-700'];
+  return ['EDIT', 'bg-yellow-100 text-yellow-700'];
+}
+
+// ── Shared micro-components ────────────────────────────────────────────
+
+function Avatar({ name }) {
+  return (
+    <div className={`w-7 h-7 ${avColor(name)} rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0`}>
+      {initials(name)}
+    </div>
+  );
+}
+
+function Badge({ status }) {
+  const cls = STATUS_CLS[status] || 'bg-gray-100 text-gray-500';
+  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{status || '—'}</span>;
+}
+
+function Alert({ msg, type = 'error', onClose }) {
+  if (!msg) return null;
+  const cls = type === 'success'
+    ? 'bg-green-50 border-green-300 text-green-800'
+    : 'bg-red-50 border-red-300 text-red-700';
+  return (
+    <div className={`border rounded px-3 py-2 mb-3 flex items-start gap-2 text-sm ${cls}`}>
+      <span className="flex-1">{msg}</span>
+      {onClose && <button onClick={onClose} className="opacity-50 hover:opacity-100">✕</button>}
+    </div>
+  );
+}
+
+function Spin() { return <span className="inline-block animate-spin">⟳</span>; }
+
+function Field({ label, hint, children }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      {children}
+      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+// ── Step 1 — Credentials ───────────────────────────────────────────────
+
+function CredentialsPanel({ onSave }) {
+  const [orgUrl, setOrgUrl] = useState('https://dev.azure.com/');
+  const [pat,    setPat]    = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [ctx,    setCtx]    = useState('');
+  const [err,    setErr]    = useState('');
+
+  function save() {
+    const url = orgUrl.trim().replace(/\/$/, '');
+    if (!url || !pat.trim() || !apiKey.trim()) {
+      return setErr('Org URL, PAT, and Anthropic API key are required.');
+    }
+    if (!url.startsWith('https://dev.azure.com/') && !url.includes('visualstudio.com')) {
+      return setErr('Org URL must start with https://dev.azure.com/your-org');
+    }
+    setErr('');
+    onSave({ orgUrl: url, pat: pat.trim(), anthropicKey: apiKey.trim(), context: ctx.trim() });
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
+      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">⬡</div>
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">PR Review Assistant</h1>
+            <p className="text-sm text-gray-400">Azure DevOps · AI-powered</p>
+          </div>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-5 text-xs text-amber-800">
+          🔒 <strong>Session-only</strong> — credentials are stored in memory only. Cleared when you close this tab.
+        </div>
+
+        {err && <Alert msg={err} onClose={() => setErr('')} />}
+
+        <div className="space-y-4">
+          <Field label="Azure DevOps Org URL">
+            <input value={orgUrl} onChange={e => setOrgUrl(e.target.value)}
+              className="input" placeholder="https://dev.azure.com/your-org" />
+          </Field>
+          <Field label="Personal Access Token (PAT)"
+            hint="Required scopes: Code (Read) · Pull Request Threads (Read &amp; Write)">
+            <input type="password" value={pat} onChange={e => setPat(e.target.value)}
+              className="input" placeholder="••••••••••" />
+          </Field>
+          <Field label="Anthropic API Key">
+            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
+              className="input" placeholder="sk-ant-..." />
+          </Field>
+          <Field label="Project context" hint="Optional — gives Claude context about your codebase">
+            <textarea value={ctx} onChange={e => setCtx(e.target.value)} rows={2}
+              className="input resize-none" placeholder="Brief description of your project…" />
+          </Field>
+          <button onClick={save}
+            className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition text-sm">
+            Save &amp; Continue →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 2 — PR Fetch ──────────────────────────────────────────────────
+
+function PRFetchPanel({ creds, onFetch, onReset }) {
+  const [url,     setUrl]     = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err,     setErr]     = useState('');
+
+  async function load() {
+    if (!url.trim()) return;
+    setErr(''); setLoading(true);
+    try {
+      const parsed = parsePrUrl(url);
+      const { repo, prId } = parsed;
+      const base    = apiBase(parsed);
+      const repoEnc = encodeURIComponent(repo);
+
+      const [pr, threadsResp, itersResp] = await Promise.all([
+        adoGet(`${base}/repositories/${repoEnc}/pullrequests/${prId}?api-version=7.1`, creds.pat),
+        adoGet(`${base}/repositories/${repoEnc}/pullrequests/${prId}/threads?api-version=7.1`, creds.pat),
+        adoGet(`${base}/repositories/${repoEnc}/pullrequests/${prId}/iterations?api-version=7.1`, creds.pat),
+      ]);
+
+      let changedFiles = [];
+      if (itersResp.value?.length) {
+        const latest     = itersResp.value[itersResp.value.length - 1];
+        const changesResp = await adoGet(
+          `${base}/repositories/${repoEnc}/pullrequests/${prId}/iterations/${latest.id}/changes?api-version=7.1`,
+          creds.pat
+        );
+        changedFiles = (changesResp.changeEntries || [])
+          .filter(e => e.item?.path)
+          .map(e => ({ path: e.item.path.replace(/^\//, ''), changeType: e.changeType }));
+      }
+
+      onFetch({
+        parsed,
+        pr,
+        threads: (threadsResp.value || []).filter(t => !t.isDeleted),
+        changedFiles,
+      });
+    } catch(e) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
+      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-semibold text-gray-800">Load Pull Request</h2>
+          <button onClick={onReset} className="text-xs text-gray-400 hover:text-red-500 transition">
+            ← Change credentials
+          </button>
+        </div>
+        {err && <Alert msg={err} onClose={() => setErr('')} />}
+        <div className="space-y-4">
+          <Field label="Pull Request URL">
+            <input value={url} onChange={e => setUrl(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && load()}
+              className="input"
+              placeholder="https://dev.azure.com/org/project/_git/repo/pullrequest/123" />
+          </Field>
+          <button onClick={load} disabled={loading || !url.trim()}
+            className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            {loading ? <><Spin /> Fetching…</> : 'Fetch PR →'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── File tree ──────────────────────────────────────────────────────────
+
+function FileTree({ files, selected, onSelect }) {
+  if (!files.length) return null;
+  return (
+    <section>
+      <p className="section-label">Changed Files ({files.length})</p>
+      <div className="space-y-px max-h-64 overflow-y-auto scrollbar-thin">
+        {files.map(f => {
+          const [lbl, cls] = changeLabel(f.changeType);
+          const name = f.path.split('/').pop();
+          const active = selected === f.path;
+          return (
+            <button key={f.path} onClick={() => onSelect(f.path)} title={f.path}
+              className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 text-xs transition
+                ${active ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'}`}>
+              <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-bold ${cls}`}>{lbl}</span>
+              <span className="truncate">{name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ── Client-side diff (LCS) ────────────────────────────────────────────
+// Used when ADO's diff API returns no blocks (new files, modified files, etc.)
+// Fetches both old + new versions and computes a proper unified diff.
+
+function computeClientDiff(oldText, newText, ctxLines = 3) {
+  const oldL = oldText ? oldText.split('\n') : [];
+  const newL = newText ? newText.split('\n') : [];
+  const m = oldL.length, n = newL.length;
+
+  // Pure addition — no old file existed
+  if (m === 0) {
+    return newL.map((t, i) => ({ type: 'add', mln: i + 1, t }));
+  }
+  // Pure deletion — no new file exists
+  if (n === 0) {
+    return oldL.map((t, i) => ({ type: 'del', oln: i + 1, t }));
+  }
+  // Files are identical
+  if (oldText === newText) {
+    return [{ hunk: 'No differences — files are identical.' }];
+  }
+
+  // LCS dynamic programming — O(m × n)
+  // Cap to avoid browser freeze on very large files
+  const CAP = 2000;
+  if (m > CAP || n > CAP) {
+    // Fall back: show as two blocks (all-del then all-add)
+    return [
+      { hunk: `File too large for inline diff (${m}×${n} lines). Showing changes only.` },
+      ...oldL.map((t, i) => ({ type: 'del', oln: i + 1, t })),
+      ...newL.map((t, i) => ({ type: 'add', mln: i + 1, t })),
+    ];
+  }
+
+  const dp = [];
+  for (let i = 0; i <= m; i++) dp[i] = new Uint32Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = oldL[i-1] === newL[j-1]
+        ? dp[i-1][j-1] + 1
+        : Math.max(dp[i-1][j], dp[i][j-1]);
+    }
+  }
+
+  // Backtrack to produce ops
+  const ops = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldL[i-1] === newL[j-1]) {
+      ops.push({ type: 'ctx', oln: i, mln: j, t: oldL[i-1] });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+      ops.push({ type: 'add', mln: j, t: newL[j-1] });
+      j--;
+    } else {
+      ops.push({ type: 'del', oln: i, t: oldL[i-1] });
+      i--;
+    }
+  }
+  ops.reverse();
+
+  // Context windowing — show ctxLines around each change, collapse the rest
+  const vis = new Uint8Array(ops.length);
+  for (let k = 0; k < ops.length; k++) {
+    if (ops[k].type !== 'ctx') {
+      for (let c = Math.max(0, k - ctxLines); c <= Math.min(ops.length - 1, k + ctxLines); c++) {
+        vis[c] = 1;
+      }
+    }
+  }
+
+  const rows = [];
+  let skipping = false;
+  for (let k = 0; k < ops.length; k++) {
+    if (!vis[k]) { skipping = true; continue; }
+    if (skipping || k === 0) {
+      const op = ops[k];
+      rows.push({ hunk: `@@ -${op.oln || '?'},… +${op.mln || '?'},… @@` });
+      skipping = false;
+    }
+    rows.push(ops[k]);
+  }
+  return rows;
+}
+
+// Convert ADO native blocks → same flat-row format as computeClientDiff
+function adoBlocksToRows(blocks) {
+  const rows = [];
+  for (const { changeType = 0, mLines = [], oLines = [], modifiedStart = 1, originalStart = 1, originalCount = 0, modifiedCount = 0 } of blocks) {
+    if (changeType === 0) {
+      rows.push({ hunk: `@@ -${originalStart},${originalCount} +${modifiedStart},${modifiedCount} @@` });
+      mLines.forEach((t, i) => rows.push({ type: 'ctx', oln: originalStart + i, mln: modifiedStart + i, t }));
+    } else if (changeType === 1) {
+      mLines.forEach((t, i) => rows.push({ type: 'add', mln: modifiedStart + i, t }));
+    } else if (changeType === 2) {
+      oLines.forEach((t, i) => rows.push({ type: 'del', oln: originalStart + i, t }));
+    } else {
+      oLines.forEach((t, i) => rows.push({ type: 'del', oln: originalStart + i, t }));
+      mLines.forEach((t, i) => rows.push({ type: 'add', mln: modifiedStart + i, t }));
+    }
+  }
+  return rows;
+}
+
+// ── Diff viewer ────────────────────────────────────────────────────────
+
+function DiffViewer({ creds, parsed, pr, filePath }) {
+  const [tab,     setTab]     = useState('diff');
+  const [rows,    setRows]    = useState(null);   // flat diff rows (unified format)
+  const [full,    setFull]    = useState(null);   // full file text (Full File tab)
+  const [loading, setLoading] = useState(false);
+  const [err,     setErr]     = useState('');
+
+  const base    = apiBase(parsed);
+  const repoEnc = encodeURIComponent(parsed.repo);
+  // Prefer GUID for the diff endpoint — more reliable than name
+  const repoId  = pr.repository?.id || parsed.repo;
+
+  useEffect(() => {
+    setRows(null); setFull(null); setErr(''); setTab('diff');
+    if (filePath) loadDiff(filePath);
+  }, [filePath]);
+
+  async function fetchText(path, commitId) {
+    const res = await fetch(
+      `${base}/repositories/${repoEnc}/items`
+        + `?path=${encodeURIComponent('/' + path)}`
+        + `&versionDescriptor.version=${encodeURIComponent(commitId)}`
+        + `&versionDescriptor.versionType=commit&api-version=7.1`,
+      { headers: { Authorization: b64(creds.pat), Accept: 'text/plain' } }
+    );
+    if (!res.ok) throw new Error(`items API ${res.status}`);
+    return res.text();
+  }
+
+  async function loadDiff(path) {
+    setLoading(true); setErr('');
+    try {
+      const src = pr.lastMergeSourceCommit?.commitId;
+      const tgt = pr.lastMergeTargetCommit?.commitId;
+      if (!src || !tgt) throw new Error('PR is missing commit SHAs — cannot diff.');
+
+      // ① Try ADO native diff blocks first (fastest when available)
+      let adoRows = null;
+      try {
+        const diffBase = `https://dev.azure.com/${encodeURIComponent(parsed.org)}/${encodeURIComponent(parsed.project)}/_apis/git`;
+        const data = await adoGet(
+          `${diffBase}/repositories/${repoId}/diffs/commits`
+            + `?baseVersion=${tgt}&targetVersion=${src}`
+            + `&baseVersionType=commit&targetVersionType=commit`
+            + `&path=${encodeURIComponent('/' + path)}`
+            + `&$top=1000&api-version=7.1`,
+          creds.pat
+        );
+        if (data.blocks?.length) adoRows = adoBlocksToRows(data.blocks);
+      } catch(_) { /* fall through to client diff */ }
+
+      if (adoRows) {
+        setRows(adoRows);
+        return;
+      }
+
+      // ② ADO returned no blocks → fetch both versions and diff client-side.
+      //    This handles new files, deleted files, and any case ADO can't diff.
+      const [oldResult, newResult] = await Promise.allSettled([
+        fetchText(path, tgt),   // old (target/base commit)
+        fetchText(path, src),   // new (source/head commit)
+      ]);
+      const oldText = oldResult.status === 'fulfilled' ? oldResult.value : '';
+      const newText = newResult.status === 'fulfilled' ? newResult.value : '';
+
+      setRows(computeClientDiff(oldText, newText));
+    } catch(e) {
+      setErr(e.message); setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadFull(path) {
+    setLoading(true); setErr('');
+    try {
+      const src = pr.lastMergeSourceCommit?.commitId;
+      setFull(await fetchText(path, src));
+    } catch(e) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function switchTab(t) {
+    setTab(t);
+    if (t === 'full' && full === null && !loading && filePath) loadFull(filePath);
+    if (t === 'diff' && rows === null && !loading && filePath) loadDiff(filePath);
+  }
+
+  if (!filePath) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 flex items-center justify-center h-36 text-sm text-gray-400">
+        ← Select a file to view its diff
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b bg-gray-50">
+        <span className="text-sm font-mono text-gray-700 truncate flex-1">{filePath}</span>
+        <div className="flex border border-gray-200 rounded overflow-hidden shrink-0">
+          {['diff','full'].map(t => (
+            <button key={t} onClick={() => switchTab(t)}
+              className={`px-3 py-1 text-xs font-medium transition
+                ${tab === t ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+              {t === 'diff' ? 'Diff' : 'Full File'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-auto max-h-[520px] scrollbar-thin">
+        {loading && <div className="p-8 text-center text-sm text-gray-400"><Spin /> Computing diff…</div>}
+        {!loading && err && <div className="p-4"><Alert msg={err} onClose={() => setErr('')} /></div>}
+        {!loading && !err && tab === 'diff' && rows !== null && <DiffTable rows={rows} />}
+        {!loading && !err && tab === 'full' && full !== null && <FullFile  content={full} />}
+      </div>
+    </div>
+  );
+}
+
+function DiffTable({ rows }) {
+  if (!rows.length) return (
+    <div className="p-4 text-sm text-gray-500">No differences found.</div>
+  );
+
+  return (
+    <table className="code-table">
+      <tbody>
+        {rows.map((row, i) => {
+          if (row.hunk) return (
+            <tr key={i} className="hunk-row"><td colSpan={4}>{row.hunk}</td></tr>
+          );
+          const rowCls  = row.type === 'add' ? 'diff-add' : row.type === 'del' ? 'diff-del' : 'diff-ctx';
+          const sign    = row.type === 'add' ? '+'         : row.type === 'del' ? '−'        : ' ';
+          const signCls = row.type === 'add' ? 'sign-add'  : row.type === 'del' ? 'sign-del' : 'sign-ctx';
+          return (
+            <tr key={i} className={rowCls}>
+              <td className="ln">{row.oln || ''}</td>
+              <td className="ln">{row.mln || ''}</td>
+              <td className={signCls}>{sign}</td>
+              <td className="px-2">{row.t}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function FullFile({ content }) {
+  return (
+    <table className="code-table">
+      <tbody>
+        {content.split('\n').map((line, i) => (
+          <tr key={i} className="diff-ctx">
+            <td className="ln" colSpan={2}>{i + 1}</td>
+            <td className="px-2">{line}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ── Thread card ────────────────────────────────────────────────────────
+
+const AI_ACTIONS = [
+  { key: 'explain', label: '💡 Explain',     desc: 'What is the reviewer asking for?' },
+  { key: 'suggest', label: '🔧 Suggest fix', desc: 'Concrete code-level approach' },
+  { key: 'draft',   label: '✍️ Draft reply', desc: 'Professional reply draft' },
+];
+
+function ThreadCard({ thread, creds, prTitle, onApply, onSelectFile, onUsage, model }) {
+  const [results,  setResults]  = useState({});
+  const [loading,  setLoading]  = useState({});
+  const [active,   setActive]   = useState(null);  // which AI action panel is open
+  const [expanded, setExpanded] = useState(true);
+
+  const root    = thread.comments?.[0];
+  const replies = thread.comments?.slice(1) || [];
+  const file    = thread.threadContext?.filePath?.replace(/^\//, '');
+
+  async function runAI(key) {
+    if (results[key]) { setActive(key); return; }   // already cached
+    setActive(key);
+    setLoading(p => ({ ...p, [key]: true }));
+    try {
+      const allText = thread.comments
+        .map(c => `${c.author?.displayName || 'Unknown'}: ${c.content}`)
+        .join('\n');
+
+      let prompt = `You are helping review a pull request on Azure DevOps.\nPR title: "${prTitle}"`;
+      if (creds.context) prompt += `\nProject context: ${creds.context}`;
+      if (file)          prompt += `\nFile: ${file}`;
+      prompt += `\n\nComment thread:\n${allText}\n\n`;
+
+      if (key === 'explain') prompt += 'Explain clearly and concisely what the reviewer is asking for or concerned about.';
+      else if (key === 'suggest') prompt += 'Provide a concrete, specific code-level suggestion to address this comment. Include code snippets where helpful.';
+      else prompt += "Draft a professional, concise reply from the PR author's perspective. Keep it natural — not overly formal.";
+
+      const { text, inputTokens, outputTokens } = await claude(creds.anthropicKey, prompt, model);
+      setResults(p => ({ ...p, [key]: text }));
+      onUsage?.(inputTokens, outputTokens);
+    } catch(e) {
+      setResults(p => ({ ...p, [key]: `Error: ${e.message}` }));
+    } finally {
+      setLoading(p => ({ ...p, [key]: false }));
+    }
+  }
+
+  function toggle(key) {
+    if (active === key && !loading[key]) setActive(null);
+    else runAI(key);
+  }
+
+  const result    = active ? results[active] : null;
+  const isLoading = active ? loading[active] : false;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden thread-card">
+      {/* Header row */}
+      <div className="px-4 py-3 bg-gray-50 border-b flex items-start gap-3">
+        <Avatar name={root?.author?.displayName} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-gray-800">{root?.author?.displayName || 'Unknown'}</span>
+            <Badge status={thread.status} />
+            {file && (
+              <button onClick={() => onSelectFile(file)} title={file}
+                className="text-xs font-mono bg-blue-50 text-blue-600 px-2 py-0.5 rounded hover:bg-blue-100 transition max-w-[180px] truncate">
+                {file.split('/').pop()}
+              </button>
+            )}
+          </div>
+          <span className="text-xs text-gray-400">{relTime(root?.publishedDate)}</span>
+        </div>
+        <button onClick={() => setExpanded(e => !e)} className="text-gray-400 hover:text-gray-600 text-xs mt-0.5">
+          {expanded ? '▲' : '▼'}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="px-4 py-3 space-y-3">
+          {/* Root comment text */}
+          <p className="text-sm text-gray-800 whitespace-pre-wrap">{root?.content}</p>
+
+          {/* Replies */}
+          {replies.length > 0 && (
+            <div className="pl-4 border-l-2 border-gray-200 space-y-2.5">
+              {replies.map(c => (
+                <div key={c.id} className="flex gap-2">
+                  <Avatar name={c.author?.displayName} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xs font-semibold text-gray-700">{c.author?.displayName}</span>
+                      <span className="text-xs text-gray-400">{relTime(c.publishedDate)}</span>
+                    </div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap mt-0.5">{c.content}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* AI action buttons */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {AI_ACTIONS.map(({ key, label, desc }) => (
+              <button key={key} title={desc} onClick={() => toggle(key)}
+                disabled={loading[key]}
+                className={`text-xs px-3 py-1.5 rounded border font-medium transition
+                  ${active === key && (results[key] || loading[key])
+                    ? 'bg-sky-100 border-sky-300 text-sky-700'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'}
+                  disabled:opacity-50 disabled:cursor-not-allowed`}>
+                {loading[key] ? <Spin /> : label}
+              </button>
+            ))}
+            {/* Quick "Reply" shortcut to jump to composer */}
+            <button onClick={() => onApply(thread.id, '')}
+              className="text-xs px-3 py-1.5 rounded border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition ml-auto">
+              ↩ Reply
+            </button>
+          </div>
+
+          {/* AI result panel */}
+          {(result || isLoading) && (
+            <div className="ai-box">
+              {isLoading && !result
+                ? <p className="text-sm text-sky-600 animate-pulse">Claude is thinking…</p>
+                : <p className="text-sm text-gray-800 whitespace-pre-wrap">{result}</p>
+              }
+              {result && (
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => onApply(thread.id, result)}
+                    className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 font-medium transition">
+                    Apply to composer
+                  </button>
+                  <button onClick={() => { setActive(null); setResults({}); }}
+                    className="text-xs px-3 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition">
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Summarize all ──────────────────────────────────────────────────────
+
+function SummarizePanel({ creds, threads, prTitle, onUsage, model }) {
+  const [loading, setLoading] = useState(false);
+  const [result,  setResult]  = useState('');
+  const [err,     setErr]     = useState('');
+
+  async function run() {
+    setLoading(true); setErr(''); setResult('');
+    try {
+      const active = threads.filter(
+        t => !t.isDeleted && t.comments?.length && ['active','pending'].includes(t.status)
+      );
+      if (!active.length) { setResult('No active threads to summarize.'); return; }
+
+      const body = active.map((t, i) => {
+        const f = t.threadContext?.filePath || '';
+        const lines = t.comments.map(c => `  ${c.author?.displayName || '?'}: ${c.content}`).join('\n');
+        return `Thread ${i + 1}${f ? ` (${f})` : ''}:\n${lines}`;
+      }).join('\n\n');
+
+      const prompt = `You are reviewing a pull request.\nPR: "${prTitle}"${creds.context ? `\nContext: ${creds.context}` : ''}\n\nActive comment threads:\n\n${body}\n\nProvide a prioritized summary grouped by urgency: must-fix → should-fix → minor. Be concise and actionable.`;
+      const { text, inputTokens, outputTokens } = await claude(creds.anthropicKey, prompt, model);
+      setResult(text);
+      onUsage?.(inputTokens, outputTokens);
+    } catch(e) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section>
+      <button onClick={run} disabled={loading}
+        className="w-full text-sm py-2 px-3 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2 transition">
+        {loading ? <><Spin /> Summarizing…</> : '✦ Summarize all comments'}
+      </button>
+      {err && <div className="mt-2"><Alert msg={err} /></div>}
+      {result && <div className="mt-3 ai-box text-sm text-gray-800 whitespace-pre-wrap">{result}</div>}
+    </section>
+  );
+}
+
+// ── Composer ───────────────────────────────────────────────────────────
+
+function Composer({ creds, parsed, threads, onPosted, fillRef }) {
+  const [mode,     setMode]     = useState('new');
+  const [threadId, setThreadId] = useState('');
+  const [text,     setText]     = useState('');
+  const [confirm,  setConfirm]  = useState(false);
+  const [posting,  setPosting]  = useState(false);
+  const [err,      setErr]      = useState('');
+  const [success,  setSuccess]  = useState('');
+
+  // Let parent pre-fill via fillRef
+  useEffect(() => {
+    fillRef.current = (tid, txt) => {
+      if (tid) { setMode('reply'); setThreadId(String(tid)); }
+      if (txt) setText(txt);
+    };
+  }, []);
+
+  const { repo, prId } = parsed;
+  const base    = apiBase(parsed);
+  const repoEnc = encodeURIComponent(repo);
+  const replyable = threads.filter(t => !t.isDeleted && t.comments?.length);
+
+  async function post() {
+    setPosting(true); setErr('');
+    try {
+      if (mode === 'reply' && threadId) {
+        await adoPost(
+          `${base}/repositories/${repoEnc}/pullrequests/${prId}/threads/${threadId}/comments?api-version=7.1`,
+          creds.pat,
+          { content: text, commentType: 1 }
+        );
+      } else {
+        await adoPost(
+          `${base}/repositories/${repoEnc}/pullrequests/${prId}/threads?api-version=7.1`,
+          creds.pat,
+          { comments: [{ content: text, commentType: 1 }], status: 1 }
+        );
+      }
+      setSuccess('Comment posted!');
+      setText(''); setConfirm(false);
+      onPosted();
+    } catch(e) {
+      setErr(e.message); setConfirm(false);
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  const canPost = text.trim().length > 0 && (mode === 'new' || threadId);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">Post Comment</h3>
+      {success && <Alert msg={success} type="success" onClose={() => setSuccess('')} />}
+      {err     && <Alert msg={err}     onClose={() => setErr('')} />}
+
+      {/* Mode selector */}
+      <div className="flex gap-4 mb-3">
+        {[{ v: 'new', l: 'New comment' }, { v: 'reply', l: 'Reply to thread' }].map(({ v, l }) => (
+          <label key={v} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+            <input type="radio" name="cmode" value={v} checked={mode === v} onChange={() => setMode(v)} />
+            {l}
+          </label>
+        ))}
+      </div>
+
+      {/* Thread dropdown (reply mode only) */}
+      {mode === 'reply' && (
+        <select value={threadId} onChange={e => setThreadId(e.target.value)}
+          className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">— Select thread —</option>
+          {replyable.map(t => {
+            const preview = (t.comments[0]?.content || '').slice(0, 60);
+            const f = t.threadContext?.filePath?.split('/').pop() || '';
+            return (
+              <option key={t.id} value={t.id}>
+                #{t.id}{f ? ` [${f}]` : ''}: {preview}
+              </option>
+            );
+          })}
+        </select>
+      )}
+
+      <textarea value={text} onChange={e => setText(e.target.value)} rows={4}
+        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+        placeholder="Write your comment… (AI suggestions can pre-fill this via 'Apply to composer')" />
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-xs text-gray-400">{text.length} chars</span>
+        <button onClick={() => canPost && setConfirm(true)} disabled={!canPost}
+          className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition">
+          Post
+        </button>
+      </div>
+
+      {/* Confirmation modal */}
+      {confirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <h3 className="font-semibold text-gray-900 mb-1">Confirm Post</h3>
+            <p className="text-xs text-gray-500 mb-3">
+              {mode === 'reply'
+                ? `Replying to thread #${threadId} on PR #${prId}`
+                : `New comment thread on PR #${prId}`}
+            </p>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto mb-5">
+              {text}
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirm(false)}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition">
+                Cancel
+              </button>
+              <button onClick={post} disabled={posting}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition flex items-center gap-2">
+                {posting ? <><Spin /> Posting…</> : 'Confirm & Post'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Full review view ───────────────────────────────────────────────────
+
+function ReviewView({ creds, data, onBack }) {
+  const { parsed, pr, changedFiles } = data;
+  const [threads, setThreads]        = useState(data.threads);
+  const [selFile, setSelFile]        = useState(null);
+  const [filter,  setFilter]         = useState('all');
+  const [spent,   setSpent]          = useState({ inTok: 0, outTok: 0 });
+  const [modelId, setModelId]        = useState(DEFAULT_MODEL);
+  const composerFill = useRef(null);
+
+  function handleUsage(inTok, outTok) {
+    setSpent(p => ({ inTok: p.inTok + inTok, outTok: p.outTok + outTok }));
+  }
+
+  // Reset spend when model changes so the display stays honest
+  function handleModelChange(id) {
+    setModelId(id);
+    setSpent({ inTok: 0, outTok: 0 });
+  }
+
+  const srcBranch = (pr.sourceRefName || '').replace('refs/heads/', '');
+  const tgtBranch = (pr.targetRefName || '').replace('refs/heads/', '');
+  const approved  = (pr.reviewers || []).filter(r => r.vote > 0).length;
+  const rejected  = (pr.reviewers || []).filter(r => r.vote < 0).length;
+  const waiting   = (pr.reviewers || []).filter(r => r.vote === 0).length;
+  const activeCount = threads.filter(t => ['active','pending'].includes(t.status)).length;
+
+  const visible = threads.filter(t => {
+    if (!t.comments?.length) return false;
+    if (filter === 'active')   return ['active','pending'].includes(t.status);
+    if (filter === 'resolved') return ['fixed','resolved','closed','byDesign','wontFix'].includes(t.status);
+    return true;
+  });
+
+  async function refreshThreads() {
+    try {
+      const { repo, prId } = parsed;
+      const base = apiBase(parsed);
+      const resp = await adoGet(
+        `${base}/repositories/${encodeURIComponent(repo)}/pullrequests/${prId}/threads?api-version=7.1`,
+        creds.pat
+      );
+      setThreads((resp.value || []).filter(t => !t.isDeleted));
+    } catch(e) { console.error('Thread refresh failed', e); }
+  }
+
+  function handleApply(threadId, text) {
+    composerFill.current?.(threadId, text);
+    document.getElementById('composer')?.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex flex-col">
+      {/* ── Header ── */}
+      <header className="bg-white border-b border-gray-200 px-5 py-3 flex items-center gap-4 sticky top-0 z-30 shadow-sm">
+        <button onClick={onBack} className="text-sm text-gray-400 hover:text-gray-700 transition shrink-0">← Back</button>
+        <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs shrink-0">PR</div>
+        <div className="flex-1 min-w-0">
+          <h1 className="font-semibold text-gray-900 truncate text-sm">
+            PR #{pr.pullRequestId}: {pr.title}
+          </h1>
+          <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+            <span className="font-mono">{srcBranch} → {tgtBranch}</span>
+            <span>by {pr.createdBy?.displayName}</span>
+            <span className={`px-2 py-0.5 rounded-full font-medium ${
+              pr.status === 'active'    ? 'bg-emerald-100 text-emerald-700'
+              : pr.status === 'completed' ? 'bg-blue-100 text-blue-700'
+              : 'bg-gray-100 text-gray-500'
+            }`}>{pr.status}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-xs shrink-0">
+          <span className="text-emerald-600 font-medium">✓ {approved}</span>
+          <span className="text-red-500 font-medium">✗ {rejected}</span>
+          <span className="text-gray-400">– {waiting}</span>
+          <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium">{activeCount} active</span>
+          {/* ── Model selector ── */}
+          <div className="border-l border-gray-200 pl-3">
+            <select
+              value={modelId}
+              onChange={e => handleModelChange(e.target.value)}
+              className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer">
+              {MODELS.map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+            <div className="text-[10px] text-gray-400 mt-0.5 text-center">
+              ${modelPricing(modelId).inPrice}/${modelPricing(modelId).outPrice} /MTok
+            </div>
+          </div>
+          {/* ── Cost display ── */}
+          <div className="border-l border-gray-200 pl-3 text-right">
+            <div className="text-gray-400 leading-tight">
+              Est.{' '}
+              <span className="font-mono text-gray-600 font-medium">
+                {fmtCost(estimateCost(threads, creds.context, modelId))}
+              </span>
+            </div>
+            <div className="text-gray-400 leading-tight">
+              Spent{' '}
+              <span className={`font-mono font-semibold ${spent.inTok > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+                {fmtCost(calcCost(spent.inTok, spent.outTok, modelId))}
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 57px)' }}>
+        {/* ── Sidebar ── */}
+        <aside className="w-72 shrink-0 bg-white border-r border-gray-200 overflow-y-auto scrollbar-thin p-4 flex flex-col gap-5">
+          {pr.description && (
+            <section>
+              <p className="section-label">Description</p>
+              <p className="text-xs text-gray-600 line-clamp-5">{pr.description}</p>
+            </section>
+          )}
+
+          {pr.reviewers?.length > 0 && (
+            <section>
+              <p className="section-label">Reviewers</p>
+              <div className="space-y-1.5">
+                {pr.reviewers.map(r => (
+                  <div key={r.id} className="flex items-center gap-2">
+                    <Avatar name={r.displayName} />
+                    <span className="text-xs text-gray-700 flex-1 truncate">{r.displayName}</span>
+                    <span className={`text-sm ${r.vote > 0 ? 'text-emerald-600' : r.vote < 0 ? 'text-red-500' : 'text-gray-300'}`}>
+                      {r.vote > 0 ? '✓' : r.vote < 0 ? '✗' : '–'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <FileTree files={changedFiles} selected={selFile} onSelect={setSelFile} />
+
+          <SummarizePanel creds={creds} threads={threads} prTitle={pr.title} onUsage={handleUsage} model={modelId} />
+        </aside>
+
+        {/* ── Main content ── */}
+        <main className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-5">
+          {/* Diff / file viewer */}
+          <DiffViewer creds={creds} parsed={parsed} pr={pr} filePath={selFile} />
+
+          {/* Review threads */}
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <h2 className="text-sm font-semibold text-gray-700">Threads ({visible.length})</h2>
+              <div className="flex border border-gray-200 rounded overflow-hidden">
+                {[['all','All'],['active','Active'],['resolved','Resolved']].map(([v, l]) => (
+                  <button key={v} onClick={() => setFilter(v)}
+                    className={`px-3 py-1 text-xs font-medium transition
+                      ${filter === v ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {visible.length === 0
+                ? <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-sm text-gray-400">No threads match this filter.</div>
+                : visible.map(t => (
+                    <ThreadCard
+                      key={t.id}
+                      thread={t}
+                      creds={creds}
+                      prTitle={pr.title}
+                      onApply={handleApply}
+                      onSelectFile={setSelFile}
+                      onUsage={handleUsage}
+                      model={modelId}
+                    />
+                  ))
+              }
+            </div>
+          </div>
+
+          {/* Composer */}
+          <div id="composer">
+            <Composer
+              creds={creds}
+              parsed={parsed}
+              threads={threads}
+              onPosted={refreshThreads}
+              fillRef={composerFill}
+            />
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// ── App root ───────────────────────────────────────────────────────────
+
+function FileOriginBanner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
+      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md text-center">
+        <div className="text-4xl mb-4">🚫</div>
+        <h1 className="text-lg font-bold text-gray-900 mb-2">Cannot run from <code>file://</code></h1>
+        <p className="text-sm text-gray-600 mb-5">
+          Browsers block cross-origin requests from local files. You must serve this page via HTTP.
+        </p>
+        <div className="bg-gray-900 rounded-lg px-4 py-3 text-left mb-5">
+          <p className="text-xs text-gray-400 mb-1">Run this in your terminal:</p>
+          <code className="text-green-400 text-sm">python3 -m http.server 8080</code>
+        </div>
+        <p className="text-sm text-gray-500">
+          Then open{' '}
+          <a href="http://localhost:8080/pr_review_v3.html"
+            className="text-blue-600 underline hover:text-blue-800">
+            http://localhost:8080/pr_review_v3.html
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [creds,  setCreds]  = useState(null);
+  const [prData, setPrData] = useState(null);
+
+  // Browsers block CORS requests from file:// origins — show clear error instead of cryptic failure
+  if (location.protocol === 'file:') return <FileOriginBanner />;
+
+  if (!creds)  return <CredentialsPanel onSave={setCreds} />;
+  if (!prData) return <PRFetchPanel creds={creds} onFetch={setPrData} onReset={() => setCreds(null)} />;
+  return <ReviewView creds={creds} data={prData} onBack={() => setPrData(null)} />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode><App /></React.StrictMode>
+);
+</script>
+</body>
+</html>
